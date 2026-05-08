@@ -8,8 +8,7 @@ import "base:runtime"
 import "core:mem"
 import api "core:sys/windows"
 
-wcnForm := L("Winforms_Window_Class")
-wcnMsgOnlyWin := L("Winforms_MsgForm_Class")
+
 global_context      := runtime.default_context() // Context
 def_window_color    : uint  : 0xF5F5F5
 def_fore_color      : uint  : 0x000000
@@ -29,7 +28,7 @@ Application :: struct
     mainHandle : HWND,
     hInstance : HINSTANCE,
     trayHwnd : HWND,
-    screenWidth, screenHeight : int,
+    screenWidth, screenHeight : i32,
     sysDPI: u32,
     formCount : int,
     clrWhite : uint,
@@ -45,7 +44,7 @@ Application :: struct
     mfMap : map[HWND]^MessageForm,
     trayHwnds: [dynamic]HWND,
     font: Font,
-    lfont : LOGFONT,
+    primaryFont : LOGFONT,
     gdip_token : ULONG_PTR,
     gdip_inited : bool,
     
@@ -64,8 +63,8 @@ app_start :: proc "contextless" ()
 @private
 initFormDefaults :: proc()
 {
-    app.screenWidth = int(api.GetSystemMetrics(0))
-    app.screenHeight = int(api.GetSystemMetrics(1))
+    app.screenWidth = api.GetSystemMetrics(0)
+    app.screenHeight = api.GetSystemMetrics(1)
     app.sysDPI = GetDpiForSystem()
     app.iccx.dwSize = size_of(app.iccx)
     app.iccx.dwIcc = ICC_STANDARD_CLASSES
@@ -74,10 +73,9 @@ initFormDefaults :: proc()
     app.clrBlack = pure_black
     EMWARR[0] = 0
     EWCAPTR = &EMWARR[0]
-    register_class()
-    // get_system_dpi()  
-    app.font = new_font("Tahoma", 11)
-    font_fill_logfont(&app.font, &app.lfont)
+    register_class() 
+    app.font = new_font("Tahoma", 12)
+    font_create_primary_handle()
 }
 
 @private
@@ -132,15 +130,18 @@ initMsgForm :: proc() // Called when first msg-only window starting
 }
 
 @private
-app_finalize :: proc(this: Application) // Will be executed right after main loop exit
+app_finalize :: proc() // Will be executed right after main loop exit
 {
-    if len(this.trayHwnds) > 0 {
-        for hwnd in this.trayHwnds {
+    if len(app.trayHwnds) > 0 {
+        for hwnd in app.trayHwnds {
             if hwnd != nil do DestroyWindow(hwnd)
         }        
     }
-    delete(this.trayHwnds)
-    delete(this.winMap)
-    delete(this.mfMap)
+    font_destroy(&app.font)
+    delete(app.trayHwnds)
+    delete(app.winMap)
+    delete(app.mfMap)
     print("Winform closed...")
 }
+
+

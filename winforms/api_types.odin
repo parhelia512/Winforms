@@ -151,6 +151,12 @@ CREATESTRUCTW :: struct {
 }
 LPCREATESTRUCTW :: ^CREATESTRUCTW
 
+NCCALCSIZE_PARAMS :: struct
+{
+	rgrc : [3]RECT,
+	lppos : ^WINDOWPOS,
+}
+
 POINT :: struct { x, y: i32,}
 
 MSG :: struct {hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPARAM, time: u32, pt: POINT,}

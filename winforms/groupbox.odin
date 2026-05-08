@@ -20,6 +20,8 @@ import "base:runtime"
 import api "core:sys/windows"
 
 PENWIDTH :i32: 4
+HTTRANSPARENT :: -1
+HTCLIENT :: 1
 
 
 GroupBox :: struct
@@ -43,12 +45,12 @@ GroupBox :: struct
 // Groupbox control's constructor
 new_groupbox :: proc{gb_ctor1, gb_ctor2}
 
-gbx :: #force_inline proc(this: ^GroupBox, offset: int) -> int
+gbx :: #force_inline proc(this: ^GroupBox, offset: i32) -> i32
 {
     return this.xpos + offset
 }
 
-gby :: #force_inline proc(this: ^GroupBox, offset: int) -> int
+gby :: #force_inline proc(this: ^GroupBox, offset: i32) -> i32
 {
     return this.ypos + offset
 }
@@ -56,60 +58,60 @@ gby :: #force_inline proc(this: ^GroupBox, offset: int) -> int
 //==============================Private Functions==================================
 @private gb_count : int = 1
 
-@private gb_ctor :: proc(p : ^Form, txt : string, x, y, w, h : int, gStyle: GroupBoxStyle) -> ^GroupBox
+@private gb_ctor :: proc(p : ^Control, txt : string, x, y, w, h : i32, gStyle: GroupBoxStyle) -> ^GroupBox
 {
     // if WcGroupBoxW == nil do WcGroupBoxW = to_wstring()
-    this := new(GroupBox)    
-    init_control(this, p, x, y, w, h, .Group_Box, gbstyleFlag, gbexstyle, wcnButton, TXTABLE, FONTABLE)
+    this := new(GroupBox) 
+    this.kind = .Group_Box   
+    control_base_init(this, p, x, y, w, h, &gb_count, txt)
+    this._createHandleProc = gb_create_handle
     this._dbFill = true
-    this._getWidth = true
-    this._wtext = new_widestring(txt)        
-    this.backColor = p.backColor
-    this.foreColor = p.foreColor
-    this._fp_beforeCreation = cast(CreateDelegate) gb_before_creation
-	this._fp_afterCreation = cast(CreateDelegate) gb_after_creation
+    this._getWidth = true        
     return this
 }
 
-@private gb_ctor1 :: proc(parent : ^Form) -> ^GroupBox
+@private gb_ctor1 :: proc(parent : ^Control) -> ^GroupBox
 {
     gb_txt : string = conc_num("GroupBox_", gb_count)
-    gb := gb_ctor(parent, gb_txt, 10, 10, 250, 250, .System)
+    this := gb_ctor(parent, gb_txt, 10, 10, 250, 250, .System)
     gb_count += 1
-    if parent.createChilds do create_control(gb)
-    return gb
+    // if this._ownerForm.createChilds do create_control(this)
+    return this
 }
 
-@private gb_ctor2 :: proc(parent : ^Form,
+@private gb_ctor2 :: proc(parent : ^Control,
                             txt : string,
-                            x, y : int, w: int = 200, h: int = 200, 
+                            x, y : i32, w: i32 = 200, h: i32 = 200, 
                             style: GroupBoxStyle = .System) -> ^GroupBox
 {
-    gb := gb_ctor(parent, txt, x, y, w, h, style)
+    this := gb_ctor(parent, txt, x, y, w, h, style)
     gb_count += 1
-    if parent.createChilds do create_control(gb)
-    return gb
+    // if this._ownerForm.createChilds do create_control(this)
+    return this
 }
 
-@private gb_before_creation :: proc(this : ^GroupBox)
+@private gb_create_handle :: proc(ctl: ^Control)
 {
-    this._bkBrush = get_solid_brush(this.backColor)
+	this := cast(^GroupBox)ctl
+	this._bkBrush = get_solid_brush(this.backColor)
+    if this.foreColor != def_fgc.value {
+        if this._gbStyle != .Classic do this._gbStyle = .Overriden
+    }
     if this._gbStyle == .Overriden {
+        this._getWidth = true
         this._pen = CreatePen(PS_SOLID, PENWIDTH, get_color_ref(this.backColor))
     }
-    this._rct = RECT{0, 0, i32(this.width), i32(this.height)}
-    this._fcref = get_color_ref(this.foreColor)
-}
-
-@private gb_after_creation :: proc(this : ^GroupBox)
-{
-    if this._gbStyle == .Classic {
+    this._rct = RECT{0, 0, this.width, this.height}
+    this._fcref = get_color_ref(this.foreColor)	
+	create_control(ctl, this.width, this.height)
+	if this._gbStyle == .Classic {
         SetWindowTheme(this.handle, EWCAPTR, EWCAPTR)
         this._themeOff = true
     }
-	set_subclass(this, gb_wnd_proc)  
-    // ptf("gb style %s", this._gbStyle)  
+	set_subclass(this, gb_wnd_proc)	
+    if this._ownerForm._enablePrintPoint do this.onMouseUp = print_point_func
 }
+
 
 gbx_add_controls :: proc(this: ^GroupBox, items: ..^Control) {
     if this._isCreated {
@@ -127,14 +129,14 @@ gbx_set_backcolor :: proc(this: ^GroupBox, clr: uint)
     check_redraw(this)
 }
 
-gbx_set_height :: proc(this: ^GroupBox, value: int)
+gbx_set_height :: proc(this: ^GroupBox, value: i32)
 {
     this.height = value
     resetGdiObjects(this, false)
     if this._isCreated do control_setpos(this, SWP_NOZORDER)
 }
 
-gbx_set_width :: proc(this: ^GroupBox, value: int)
+gbx_set_width :: proc(this: ^GroupBox, value: i32)
 {
     this.width = value
     resetGdiObjects(this, false)
@@ -217,8 +219,7 @@ gbx_set_style :: proc(this: ^GroupBox, value: GroupBoxStyle) {
     delete_gdi_object(this._pen)
     delete_gdi_object(this._hbmp)
     DeleteDC(this._memDC)
-    widestring_destroy(this._wtext)
-    font_destroy(&this.font)  
+    control_base_dtor(this) 
     delete(this._controls)  
     free(this)
 }
@@ -237,13 +238,16 @@ gbx_set_style :: proc(this: ^GroupBox, value: GroupBoxStyle) {
     //display_msg(msg)
     
     switch msg {
-        case WM_DESTROY : 
+    case WM_NCDESTROY : 
         RemoveWindowSubclass(hw, gb_wnd_proc, sc_id)
-        this := control_cast(GroupBox, ref_data)
         gb_finalize(this)
 
+    case WM_NCHITTEST:
+        hit := DefSubclassProc(hw, msg, wp, lp)
+        if hit == HTTRANSPARENT do return HTCLIENT
+        return hit
+
     case WM_PAINT :            
-        this := control_cast(GroupBox, ref_data)
         if this._gbStyle == .Overriden {
             ret := DefSubclassProc(hw, msg, wp, lp)
             gfx := new_graphics(hw)
@@ -253,7 +257,6 @@ gbx_set_style :: proc(this: ^GroupBox, value: GroupBoxStyle) {
         }
 
     case CM_STATIC_COLOR:
-        this := control_cast(GroupBox, ref_data)
         if this._gbStyle == .Classic {
             hdc := dir_cast(wp, HDC)
             api.SetBkMode(hdc, api.BKMODE.TRANSPARENT)                
@@ -262,11 +265,38 @@ gbx_set_style :: proc(this: ^GroupBox, value: GroupBoxStyle) {
         return dir_cast(this._bkBrush, LRESULT)
 
     case WM_GETTEXTLENGTH:
-        this := control_cast(GroupBox, ref_data)
         if this._gbStyle == .Overriden do return 0
 
+    case WM_NOTIFY :
+        nm := dir_cast(lp, ^NMHDR)
+        return SendMessage(nm.hwndFrom, CM_NOTIFY, wp, lp )
+    
+    case WM_CTLCOLOREDIT :
+        ctl_hwnd := dir_cast(lp, HWND)
+        return SendMessage(ctl_hwnd, CM_EDIT_COLOR, wp, lp)
+
+    case WM_CTLCOLORSTATIC :
+        ctl_hwnd := dir_cast(lp, HWND)
+        return SendMessage(ctl_hwnd, CM_STATIC_COLOR, wp, lp)
+
+    case WM_CTLCOLORLISTBOX :
+            /* ================================================================================
+            If user uses a ComboBox, it contains a ListBox in it.
+            So, 'ctlHwnd' might be a handle of that ListBox. Or it might be a normal ListBox too.
+            So, we need to check it before disptch this message to that listbox.
+            Because, if it is from Combo's listbox, there is no Wndproc function for that ListBox. 
+            =======================================================================================*/
+            ctl_hwnd := dir_cast(lp, HWND)
+            cmb_hwnd, okay := find_combo_data(this._ownerForm, ctl_hwnd)
+            if okay  {
+                // This message is from a combo's listbox. Divert it to that combo box.
+                return SendMessage(cmb_hwnd, CM_COMBOLBCOLOR, wp, lp)
+            } else {
+                // This message is from a normal listbox. send it to it's wndproc.
+                return SendMessage(ctl_hwnd, CM_LIST_COLOR, wp, lp)
+            }
+
     case WM_ERASEBKGND:
-        this := control_cast(GroupBox, ref_data)
         hdc := dir_cast(wp, HDC)
         if this._getWidth {
             sz : SIZE    

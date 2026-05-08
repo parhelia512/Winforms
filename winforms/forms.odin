@@ -66,7 +66,7 @@ Form :: struct
     start_pos : StartPosition,
     style : FormStyle,
     minimizeBox, maximizeBox : bool,
-    createChilds: bool,
+    createChilds : bool,
     windowState : FormState,
     menubar : ^MenuBar,
 
@@ -83,12 +83,13 @@ Form :: struct
     onClosed : EventHandler,
     onThreadMsg: ThreadMsgHandler,
 
-    _isLoaded : bool,    
+    _isLoaded : bool,   
+    _enablePrintPoint: bool, 
     _gdraw : FormGradient,
     _drawMode : FormDrawMode, 
-    _cDrawChilds : [dynamic]HWND, // Holds Child handles which needs special draw
+    // _cDrawChilds : [dynamic]HWND, // Holds Child handles which needs special draw
     _uDrawChilds : map[UINT]HWND,
-    _controls : [dynamic]^Control,
+    
     _gdBrush: HBRUSH,
     _comboData : [dynamic]ComboData,
     _menuItemMap : map[u32]^MenuItem,
@@ -97,6 +98,7 @@ Form :: struct
     _formID: int,
     _mouseOwner : ^Control,
     _prevMouseOwner: ^Control,
+    _controls : [dynamic]^Control,
 }
 
 // Create new form
@@ -125,7 +127,7 @@ create_form :: proc(this : ^Form )
             app.startState = this.windowState
         }
         // set_form_font_internal(this)
-        if this.font.handle == nil do font_create_handle(&this.font)
+        if this.font.handle == nil do font_create_handle(&this.font, true) // True means use primary font LOGFONT in app. It is already created in app_start() proc.
         // SetWindowLongPtr(this.handle, GWLP_USERDATA, cast(LONG_PTR) cast(UINT_PTR) this)
         // ShowWindow(app.mainHandle, cast(i32) app.startState )
     }
@@ -133,7 +135,11 @@ create_form :: proc(this : ^Form )
 }
 
 // Print the mouse coordinates where it clicked
-print_points :: proc(frm: ^Form) { frm.onMouseUp = print_point_func }
+print_points :: proc(frm: ^Form) 
+{ 
+    frm._enablePrintPoint = true
+    frm.onMouseUp = print_point_func 
+}
 
 // Set the colors to draw a gradient background in form.
 form_set_gradient :: proc(this: ^Form, clr1, clr2 : uint,top_bottom := true)
@@ -150,7 +156,7 @@ form_set_gradient :: proc(this: ^Form, clr1, clr2 : uint,top_bottom := true)
 start_mainloop :: proc(this: ^Form)
 {
     create_child_handles(this)
-    // ShowWindow(this.handle, 5)
+    
     ShowWindow(app.mainHandle, cast(i32) app.startState )
     UpdateWindow(this.handle)
     ms : MSG
@@ -159,7 +165,7 @@ start_mainloop :: proc(this: ^Form)
         TranslateMessage(&ms)
         DispatchMessage(&ms)
     }
-    app_finalize(app)
+    app_finalize()
 }
 
 // Show the form
@@ -189,7 +195,7 @@ FormGradient :: struct {c1, c2 : Color, t2b : bool, }
 
 //=================================================================Private Functions=========================
 
-@private form_ctor :: proc( t : string = "", w : int = 500, h : int = 400 ) -> ^Form
+@private form_ctor :: proc( t : string = "", w : i32 = 500, h : i32 = 400 ) -> ^Form
 {
     if app.formCount == 0 do global_context = context
     if app.isFormReg == false do initFormDefaults()
@@ -206,7 +212,7 @@ FormGradient :: struct {c1, c2 : Color, t2b : bool, }
     f.style = .Default
     f.maximizeBox = true
     f.minimizeBox = true
-    f.font = new_font()
+    font_clone(&app.font, &f.font)
     f._drawMode = .Default
     f.backColor = def_window_color
     f.foreColor = app.clrBlack
@@ -220,7 +226,7 @@ FormGradient :: struct {c1, c2 : Color, t2b : bool, }
 
 @private new_form1 :: proc() -> ^Form { return form_ctor() }
 
-@private new_form2 :: proc( txt : string, w : int = 500, h : int = 400) -> ^Form
+@private new_form2 :: proc( txt : string, w : i32 = 500, h : i32 = 400) -> ^Form
 {
     return form_ctor( txt, w, h)
 }
@@ -238,7 +244,7 @@ FormGradient :: struct {c1, c2 : Color, t2b : bool, }
     // delete_gdi_object(this.font.handle)
     font_destroy(&this.font)
     delete(this._uDrawChilds)
-    delete(this._cDrawChilds)
+    // delete(this._cDrawChilds)
     delete(this._comboData)
 
     delete_gdi_object(this._gdBrush)
@@ -265,15 +271,18 @@ form_setfont :: proc(this : ^Form, fname: string, fsize: int, fweight: FontWeigh
     font_fill_logfont(&this.font, &lf)
     this.font.handle = CreateFontIndirect(&lf)
     if this._isCreated do ctl_send_msg(this.handle, WM_SETFONT,this.font.handle, 1)
-    if useGlobal do app.lfont = lf      
+    if useGlobal do app.primaryFont = lf      
 }
 
 @private create_child_handles :: proc(this: ^Form)
 {
     if this._menubarUsed do menubar_create_handle(this.menubar)
     if len(this._controls) > 0 {
-        for ctl in this._controls {            
-            if ctl.handle == nil do create_control(ctl)
+        for ctl in this._controls {           
+            if ctl.handle == nil {
+                ctl._createHandleProc(ctl)
+                if ctl.onHandleCreated != nil do ctl.onHandleCreated(ctl, &gea)
+            }
         }
     }
 }
@@ -281,6 +290,8 @@ form_setfont :: proc(this : ^Form, fname: string, fsize: int, fweight: FontWeigh
 @private print_point_func :: proc(c: ^Control, mea : ^MouseEventArgs)
 {
     @static x : int = 1
+    // pt : POINT = {mea.x, mea.y}
+    // ScreenToClient(c.handle, &pt)
     fmt.printf("[%d] X: %d,  Y: %d\n", x, mea.x, mea.y)
     x+= 1
 }
@@ -429,7 +440,7 @@ form_setfont :: proc(this : ^Form, fname: string, fsize: int, fweight: FontWeigh
 window_proc :: proc "stdcall" (hw : HWND, msg : u32, wp : WPARAM, lp : LPARAM ) -> LRESULT
 {
     context = global_context
-    //display_msg(msg)
+    // display_msg(msg)
     // frm := app.winMap[hw]
     frm := dir_cast(GetWindowLongPtr(hw, GWLP_USERDATA), ^Form)
     if (frm == nil) {
@@ -560,8 +571,8 @@ window_proc :: proc "stdcall" (hw : HWND, msg : u32, wp : WPARAM, lp : LPARAM ) 
 
         case WM_SIZING :
             sea := new_size_event_args(msg, wp, lp)
-            frm.width = int(sea.formRect.right - sea.formRect.left)
-            frm.height = int(sea.formRect.bottom - sea.formRect.top)
+            frm.width = sea.formRect.right - sea.formRect.left
+            frm.height = sea.formRect.bottom - sea.formRect.top
             if frm.onResizing != nil {
                 frm.onResizing(frm, &sea)
                 return 1
@@ -578,8 +589,8 @@ window_proc :: proc "stdcall" (hw : HWND, msg : u32, wp : WPARAM, lp : LPARAM ) 
             return 0
 
         case WM_MOVE :
-            frm.xpos = int(get_x_lpm(lp))
-            frm.ypos = int(get_y_lpm(lp))
+            frm.xpos = get_x_lpm(lp)
+            frm.ypos = get_y_lpm(lp)
             if frm.onMoved != nil {
                 ea := new_event_args()
                 frm.onMoved(frm, &ea)
@@ -589,8 +600,8 @@ window_proc :: proc "stdcall" (hw : HWND, msg : u32, wp : WPARAM, lp : LPARAM ) 
 
         case WM_MOVING :
             rct := dir_cast(lp, ^RECT)
-            frm.xpos = int(rct.left)
-            frm.ypos = int(rct.top)
+            frm.xpos = rct.left
+            frm.ypos = rct.top
             if frm.onMoving != nil {
                 ea := new_event_args()
                 frm.onMoving(frm, &ea)
@@ -636,7 +647,7 @@ window_proc :: proc "stdcall" (hw : HWND, msg : u32, wp : WPARAM, lp : LPARAM ) 
             nm := dir_cast(lp, ^NMHDR)
             return SendMessage(nm.hwndFrom, CM_NOTIFY, wp, lp )
 
-        case WM_DESTROY:
+        case WM_DESTROY:            
             if frm.onClosed != nil {
                 ea:= new_event_args()
                 frm.onClosed(frm, &ea)

@@ -34,7 +34,6 @@ import api "core:sys/windows"
 
 
 
-wcnProgressBar := L("msctls_progress32")
 pgbcount : int = 0
 
 ProgressBar :: struct
@@ -132,50 +131,59 @@ progressbar_set_value :: proc(pb : ^ProgressBar, ival : int)
 
 
 //=====================================Private Functions=======================================
-@private pb_ctor :: proc(f : ^Form, x, y, w, h : int) -> ^ProgressBar
+@private pb_ctor :: proc(p : ^Control, x, y, w, h : i32) -> ^ProgressBar
 {
     if pgbcount == 0 {
         app.iccx.dwIcc = ICC_PROGRESS_CLASS
         InitCommonControlsEx(&app.iccx)
     }
     this := new(ProgressBar)
-    init_control(this, f, x, y, w, h, .Progress_Bar, 
-                    COMM_CTRL_STYLES | PBS_SMOOTH, WS_EX_STATICEDGE, 
-                    wcnProgressBar, NO_TXT, FONTABLE)
-    pgbcount += 1
+    this.kind = .Progress_Bar
+    control_base_init(this, p, x, y, w, h, &pgbcount)
+    this._createHandleProc = pgb_create_handle
     this.minValue = 0
     this.maxValue = 100
     this.step = 1
     this.speed = 30
     this.style = .Block
     this._theme = .System_Color
-    this._fp_beforeCreation = cast(CreateDelegate) pb_before_creation
-	this._fp_afterCreation = cast(CreateDelegate) pb_after_creation
     return this
 }
 
 
-@private pb_new1 :: proc(parent : ^Form) -> ^ProgressBar
+@private pb_new1 :: proc(parent : ^Control) -> ^ProgressBar
 {
-    pb := pb_ctor(parent, 10, 10, 200, 25)
-    if parent.createChilds do create_control(pb)
-    return pb
+    this := pb_ctor(parent, 10, 10, 200, 25)
+    if this._ownerForm.createChilds do create_control(this)
+    return this
 }
 
-@private pb_new2 :: proc(parent : ^Form, x, y : int, perc: bool = false) -> ^ProgressBar
+@private pb_new2 :: proc(parent : ^Control, x, y : i32, perc: bool = false) -> ^ProgressBar
 {
-    pb := pb_ctor(parent, x, y, 200, 25)
-    pb.showPercentage = perc
-    if parent.createChilds do create_control(pb)
-    return pb
+    this := pb_ctor(parent, x, y, 200, 25)
+    this.showPercentage = perc
+    if this._ownerForm.createChilds do create_control(this)
+    return this
 }
 
-@private pb_new3 :: proc(parent : ^Form, x, y, w, h : int, perc: bool = false) -> ^ProgressBar
+@private pb_new3 :: proc(parent : ^Control, x, y, w, h : i32, perc: bool = false) -> ^ProgressBar
 {
-    pb := pb_ctor(parent, x, y, w, h)
-    pb.showPercentage = perc
-    if parent.createChilds do create_control(pb)
-    return pb
+    this := pb_ctor(parent, x, y, w, h)
+    this.showPercentage = perc
+    if this._ownerForm.createChilds do create_control(this)
+    return this
+}
+
+@private pgb_create_handle :: proc(ctl: ^Control)
+{
+	this := cast(^ProgressBar)ctl
+	pb_adjust_styles(this)	
+	create_control(ctl, this.width, this.height)
+	set_subclass(this, pb_wnd_proc)
+    pb_set_range_internal(this)
+    if this.value > 0 {
+        SendMessage(this.handle, PBM_SETPOS, WPARAM(i32(this.value)), 0)
+    }	
 }
 
 @private pb_adjust_styles :: proc(pb : ^ProgressBar)
@@ -216,8 +224,8 @@ progressbar_set_value :: proc(pb : ^ProgressBar, ival : int)
         defer ReleaseDC(hw, hdc)
         SelectObject(hdc, HGDIOBJ(this.font.handle))
         GetTextExtentPoint32(hdc, wtext, tlen, &ss)
-        x: i32 = (i32(this.width) - ss.cx) / 2;
-        y: i32 = (i32(this.height) - ss.cy) / 2;
+        x: i32 = (this.width - ss.cx) / 2;
+        y: i32 = (this.height - ss.cy) / 2;
         api.SetBkMode(hdc, api.BKMODE.TRANSPARENT);
         SetTextColor(hdc, get_color_ref(this.foreColor));
         TextOut(hdc, x, y, wtext, tlen)
@@ -229,14 +237,14 @@ progressbar_set_value :: proc(pb : ^ProgressBar, ival : int)
 
 }
 
-@private pb_before_creation :: proc(pb : ^ProgressBar) { pb_adjust_styles(pb)}
+// @private pb_before_creation :: proc(pb : ^ProgressBar) { pb_adjust_styles(pb)}
 
-@private pb_after_creation :: proc(pb : ^ProgressBar)
-{
-    set_subclass(pb, pb_wnd_proc)
-    pb_set_range_internal(pb)
-    if pb.value > 0 do SendMessage(pb.handle, PBM_SETPOS, WPARAM(i32(pb.value)), 0)
-}
+// @private pb_after_creation :: proc(pb : ^ProgressBar)
+// {
+//     set_subclass(pb, pb_wnd_proc)
+//     pb_set_range_internal(pb)
+//     if pb.value > 0 do SendMessage(pb.handle, PBM_SETPOS, WPARAM(i32(pb.value)), 0)
+// }
 
 @private progressbar_property_setter :: proc(this: ^ProgressBar, prop: ProgressBarProps, value: $T)
 {
@@ -255,10 +263,9 @@ progressbar_set_value :: proc(pb : ^ProgressBar, ival : int)
 	}
 }
 
-@private pb_finalize :: proc(this: ^ProgressBar, scid: UINT_PTR)
+@private pb_finalize :: proc(this: ^ProgressBar)
 {
-    RemoveWindowSubclass(this.handle, pb_wnd_proc, scid)
-    font_destroy(&this.font)
+    control_base_dtor(this)
     free(this)
 }
 
@@ -268,8 +275,8 @@ progressbar_set_value :: proc(pb : ^ProgressBar, ival : int)
 
     context = global_context //
     // context = runtime.default_context()
-    pb := control_cast(ProgressBar, ref_data)
-    res := ctrl_common_msg_handler(pb, hw, msg, wp, lp) 
+    this := control_cast(ProgressBar, ref_data)
+    res := ctrl_common_msg_handler(this, hw, msg, wp, lp) 
     #partial switch res {
         case .Call_Def_Proc: return DefSubclassProc(hw, msg, wp, lp)
         case .Immediate_Return: return 1
@@ -277,18 +284,14 @@ progressbar_set_value :: proc(pb : ^ProgressBar, ival : int)
     
     //display_msg(msg)
     switch msg {
-    case WM_DESTROY : 
-        pb := control_cast(ProgressBar, ref_data)
-        pb_finalize(pb, sc_id)
+    case WM_NCDESTROY : 
+        RemoveWindowSubclass(this.handle, pb_wnd_proc, sc_id)
+        pb_finalize(this)
 
     case WM_PAINT : 
-        pb := control_cast(ProgressBar, ref_data)
-        return pb_draw_percentage(pb, hw, msg, wp, lp)
+        return pb_draw_percentage(this, hw, msg, wp, lp)
               
     }
     return DefSubclassProc(hw, msg, wp, lp)
 }
 
-// modify_theme :: proc(pb : ^ProgressBar, dc : HDC, htm : HTHEME, state : i32) {
-
-// }

@@ -46,9 +46,7 @@ import api "core:sys/windows"
 import "core:time"
 
 
-wcnCombo:= L("ComboBox")
-
-
+_cmbCounter: int = 1
 
 ComboBox:: struct
 {
@@ -247,43 +245,40 @@ combo_set_style:: proc(cmb: ^ComboBox, style: DropDownStyle)
     return cd
 }
 
-@private cmb_ctor:: proc(p: ^Form, w: int = 130, h: int = 30, x: int = 10, y: int = 10) -> ^ComboBox
+@private cmb_ctor:: proc(p: ^Control, w: i32 = 130, h: i32 = 30, x: i32 = 10, y: i32 = 10) -> ^ComboBox
 {
-    cmb:= new(ComboBox)
-    init_control(cmb, p, x, y, w, h, .Combo_Box, COMM_CTRL_STYLES | CBS_DROPDOWN, 
-                    WS_EX_CLIENTEDGE, wcnCombo, NO_TXT, FONTABLE)
-    cmb.backColor = app.clrWhite
-    cmb.foreColor = app.clrBlack
-    cmb.selectedIndex = -1
-    cmb.comboStyle = DropDownStyle.Lb_Combo
-    cmb._fp_beforeCreation = cast(CreateDelegate) cmb_before_creation
-	cmb._fp_afterCreation = cast(CreateDelegate) cmb_after_creation    
-    return cmb
+    this:= new(ComboBox)
+    this.kind = .Combo_Box
+    control_base_init(this, p, x, y, w, h, &_cmbCounter)
+    this._createHandleProc = cmb_create_handle
+    this.selectedIndex = -1
+    this.comboStyle = DropDownStyle.Lb_Combo
+    return this
 }
 
-@private new_combo1:: proc(parent: ^Form) -> ^ComboBox
+@private new_combo1:: proc(parent: ^Control) -> ^ComboBox
 {
-    cmb:= cmb_ctor(parent)
-    if parent.createChilds do create_control(cmb)
-    return cmb
+    this:= cmb_ctor(parent)
+    if this._ownerForm.createChilds do create_control(this)
+    return this
 }
 
-@private new_combo2:: proc(parent: ^Form, x, y: int, 
+@private new_combo2:: proc(parent: ^Control, x, y: i32, 
                             cmbStyle: DropDownStyle = DropDownStyle.Lb_Combo ) -> ^ComboBox
 {
-    cmb:= cmb_ctor(parent, x = x, y= y)
-    cmb.comboStyle = cmbStyle
-    if parent.createChilds do create_control(cmb)
-    return cmb
+    this:= cmb_ctor(parent, x = x, y= y)
+    this.comboStyle = cmbStyle
+    if this._ownerForm.createChilds do create_control(this)
+    return this
 }
 
-@private new_combo3:: proc(parent: ^Form, x, y, w, h: int,
+@private new_combo3:: proc(parent: ^Control, x, y, w, h: i32,
                             cmbStyle: DropDownStyle = DropDownStyle.Lb_Combo ) -> ^ComboBox
 {
-    cmb:= cmb_ctor(parent, w, h, x, y)
-    cmb.comboStyle = cmbStyle
-    if parent.createChilds do create_control(cmb)
-    return cmb
+    this:= cmb_ctor(parent, w, h, x, y)
+    this.comboStyle = cmbStyle
+    if this._ownerForm.createChilds do create_control(this)
+    return this
 }
 
 @private add_items2:: proc(cmb: ^ComboBox, items: ..any )
@@ -319,35 +314,26 @@ combo_set_style:: proc(cmb: ^ComboBox, style: DropDownStyle)
     this._hoverTimer = new_timer_internal(this.handle, 400)
 }
 
-
-@private cmb_before_creation:: proc(cmb: ^ComboBox)
+@private cmb_create_handle :: proc(ctl: ^Control)
 {
-    if cmb.comboStyle == .Lb_Combo {
-        cmb._style |= CBS_DROPDOWNLIST
+	this := cast(^ComboBox)ctl
+	if this.comboStyle == .Lb_Combo {
+        this._style |= CBS_DROPDOWNLIST
     } else {
-        cmb._style |= CBS_DROPDOWN
+        this._style |= CBS_DROPDOWN
     }
-
-    /* We need to take special care about contril ID.
-     * If this is the first time a combo is created, we can use...
-     * global control ID. But if a combo is recreating, then...
-     * we must use the old comb's control ID. */
-    if cmb._recreateEnabled {
-        cmb.controlID = cmb._oldCtlID
-
-        // Collect the selected index if any
-        cmb.selectedIndex = int(SendMessage(cmb.handle, CB_GETCURSEL, 0, 0))
-    } else {
-        globalCtlID += 1
-    	cmb.controlID = globalCtlID
+    if this._recreateEnabled {
+        this.selectedIndex = int(SendMessage(this.handle, CB_GETCURSEL, 0, 0))
     }
-
-    // Set back color brush
-    cmb._bkBrush = get_solid_brush(cmb.backColor)
+    this._bkBrush = get_solid_brush(this.backColor)
+	create_control(ctl, this.width, this.height)
+	cmb_after_creation(this)	
 }
 
+
+
 @private cmb_after_creation:: proc(cmb: ^ComboBox)
-{
+{    
 	set_subclass(cmb, cmb_wnd_proc)
     cmb._oldCtlID = cmb.controlID
     cd: ComboData = get_combo_info(cmb)
@@ -355,14 +341,14 @@ combo_set_style:: proc(cmb: ^ComboBox, style: DropDownStyle)
     // Collecting child controls info
     if cmb._recreateEnabled {
         cmb._recreateEnabled = false
-        update_combo_data(cmb.parent, cd)
+        update_combo_data(cmb._ownerForm, cd)
 
         // If selected index was a valid number, set the selection again.
         if cmb.selectedIndex != -1 {
             SendMessage(cmb.handle, CB_SETCURSEL, WPARAM(i32(cmb.selectedIndex)), 0)
         }
     } else {
-        collect_combo_data(cmb.parent, cd)
+        collect_combo_data(cmb._ownerForm, cd)
     }
 
     // Now, subclass the edit control.
@@ -382,7 +368,8 @@ combo_set_style:: proc(cmb: ^ComboBox, style: DropDownStyle)
 @private cmb_mouse_move_handler :: proc(this: ^ComboBox, hw: HWND, msg: UINT, wpm: WPARAM, lpm: LPARAM)
 {
     if this.onMouseMove != nil {
-        mea := new_mouse_event_args(msg, wpm, lpm)
+        mea : MouseEventArgs
+		fill_mouse_event_args(&mea, msg, wpm, lpm)
         this.onMouseMove(this, &mea)
     }
 
@@ -437,14 +424,12 @@ combo_set_style:: proc(cmb: ^ComboBox, style: DropDownStyle)
     }
 }
 
-@private cmb_finalize:: proc(this: ^ComboBox, scid: UINT_PTR)
+@private cmb_finalize:: proc(this: ^ComboBox)
 {
-    RemoveWindowSubclass(this.handle, cmb_wnd_proc, scid)
-    if !this._recreateEnabled
-    {
-        delete_gdi_object(this._bkBrush)
-        font_destroy(&this.font)
+    if !this._recreateEnabled {
+        delete_gdi_object(this._bkBrush)        
         if SpecialMouseEvents.Mouse_Hover in this._mouseEvents do timer_dtor(this._hoverTimer)
+        control_base_dtor(this)
         delete(this.items)
         free(this)
     }
@@ -454,8 +439,8 @@ combo_set_style:: proc(cmb: ^ComboBox, style: DropDownStyle)
                                 sc_id: UINT_PTR, ref_data: DWORD_PTR) -> LRESULT
 {
     context = global_context
-    cmb:= control_cast(ComboBox, ref_data)
-    res := ctrl_common_msg_handler(cmb, hw, msg, wp, lp) 
+    this := control_cast(ComboBox, ref_data)
+    res := ctrl_common_msg_handler(this, hw, msg, wp, lp) 
     #partial switch res {
         case .Call_Def_Proc: return DefSubclassProc(hw, msg, wp, lp)
         case .Immediate_Return: return 1
@@ -463,41 +448,42 @@ combo_set_style:: proc(cmb: ^ComboBox, style: DropDownStyle)
    
     switch msg {
         case WM_PAINT:            
-            if cmb.onPaint != nil {
+            if this.onPaint != nil {
                 ps: PAINTSTRUCT
                 hdc:= BeginPaint(hw, &ps)
                 pea:= new_paint_event_args(&ps)
-                cmb.onPaint(cmb, &pea)
+                this.onPaint(this, &pea)
                 EndPaint(hw, &ps)
                 return 0
             }
-        case WM_DESTROY: 
-            cmb_finalize(cmb, sc_id)
+        case WM_NCDESTROY: 
+            RemoveWindowSubclass(this.handle, cmb_wnd_proc, sc_id)
+            cmb_finalize(this)
 
         case CM_CTLCOMMAND:
             ncode:= HIWORD(wp)
            // ptf("WM_COMMAND notification code - %d\n", ncode)
             switch ncode {
                 case CBN_SELCHANGE:
-                    if cmb.onSelectionChanged != nil do cmb.onSelectionChanged(cmb, &gea)
+                    if this.onSelectionChanged != nil do this.onSelectionChanged(this, &gea)
 
                 case CBN_DBLCLK:
 
                 case CBN_SETFOCUS:
-                    if cmb.onGotFocus != nil do cmb.onGotFocus(cmb, &gea)
+                    if this.onGotFocus != nil do this.onGotFocus(this, &gea)
                     
                 case CBN_KILLFOCUS:
-                    if cmb.onLostFocus != nil do cmb.onLostFocus(cmb, &gea)
+                    if this.onLostFocus != nil do this.onLostFocus(this, &gea)
     
                 case CBN_EDITCHANGE:
-                    if cmb.onTextChanged != nil do cmb.onTextChanged(cmb, &gea)
+                    if this.onTextChanged != nil do this.onTextChanged(this, &gea)
                 
                 case CBN_EDITUPDATE:
-                     if cmb.onTextUpdated != nil do  cmb.onTextUpdated(cmb, &gea)
+                     if this.onTextUpdated != nil do  this.onTextUpdated(this, &gea)
                     
                 case CBN_DROPDOWN:
-                    cmb._dropped = true
-                    if cmb.onListOpened != nil do cmb.onListOpened(cmb, &gea)
+                    this._dropped = true
+                    if this.onListOpened != nil do this.onListOpened(this, &gea)
                 
                 case CBN_CLOSEUP:
                     /* When user selects an item from the dropdown list, Windows 
@@ -505,49 +491,49 @@ combo_set_style:: proc(cmb: ^ComboBox, style: DropDownStyle)
                         contains the combo box items. So we don't get the mouse leave
                         event from the combo box. So we need to track when the list is
                         opening. This bool flag is used to indicate the dropdown state. */
-				    cmb._dropped = false
-                    if cmb.onListClosed != nil do cmb.onListClosed(cmb, &gea)
+				    this._dropped = false
+                    if this.onListClosed != nil do this.onListClosed(this, &gea)
 
                 case CBN_SELENDOK:
-                    cmb._isMouseTracking = false
-                    if cmb.onSelectionCommitted != nil do cmb.onSelectionCommitted(cmb, &gea)
+                    this._isMouseTracking = false
+                    if this.onSelectionCommitted != nil do this.onSelectionCommitted(this, &gea)
 
                 case CBN_SELENDCANCEL:
-                    if cmb.onSelectionCancelled != nil do cmb.onSelectionCancelled(cmb, &gea)
+                    if this.onSelectionCancelled != nil do this.onSelectionCancelled(this, &gea)
 
             }
 
         case CM_COMBOLBCOLOR:
             //print("color combo list box")
-            if cmb.foreColor != def_fore_clr || cmb.backColor != def_back_clr {
+            if this.foreColor != def_fore_clr || this.backColor != def_back_clr {
                 //print("combo color rcvd")
                 dc_handle:= dir_cast(wp, HDC)
                 api.SetBkMode(dc_handle, api.BKMODE.TRANSPARENT)
-                if cmb.foreColor != def_fore_clr do SetTextColor(dc_handle, get_color_ref(cmb.foreColor))
-                if cmb._bkBrush == nil do cmb._bkBrush = CreateSolidBrush(get_color_ref(cmb.backColor))
-                return toLRES(cmb._bkBrush)
+                if this.foreColor != def_fore_clr do SetTextColor(dc_handle, get_color_ref(this.foreColor))
+                if this._bkBrush == nil do this._bkBrush = CreateSolidBrush(get_color_ref(this.backColor))
+                return toLRES(this._bkBrush)
             } else {
-                if cmb._bkBrush == nil do cmb._bkBrush = CreateSolidBrush(get_color_ref(cmb.backColor))
-                return toLRES(cmb._bkBrush)
+                if this._bkBrush == nil do this._bkBrush = CreateSolidBrush(get_color_ref(this.backColor))
+                return toLRES(this._bkBrush)
             }
 
         case WM_PARENTNOTIFY:
             wp_lw:= LOWORD(wp)
             switch wp_lw {
             case 512:  // WM_MOUSEFIRST
-                if cmb.onTBMouseEnter != nil {
+                if this.onTBMouseEnter != nil {
                     ea:= new_event_args()
-                    cmb.onTBMouseEnter(cmb, &ea)
+                    this.onTBMouseEnter(this, &ea)
                 }
             case 513: // WM_LBUTTONDOWN
-                if cmb.onTBClick != nil {
+                if this.onTBClick != nil {
                     ea:= new_event_args()
-                    cmb.onTBClick(cmb, &ea)
+                    this.onTBClick(this, &ea)
                 }
             case 675: // WM_MOUSELEAVE
-                if cmb.onTBMouseLeave != nil {
+                if this.onTBMouseLeave != nil {
                     ea:= new_event_args()
-                    cmb.onTBMouseLeave(cmb, &ea)
+                    this.onTBMouseLeave(this, &ea)
                 }
             }
     }
@@ -559,35 +545,36 @@ combo_set_style:: proc(cmb: ^ComboBox, style: DropDownStyle)
                                 sc_id: UINT_PTR, ref_data: DWORD_PTR) -> LRESULT
 {
     context = runtime.default_context()
-    cmb:= control_cast(ComboBox, ref_data)
-    res := ctrl_common_msg_handler(cmb, hw, msg, wp, lp) 
+    this := control_cast(ComboBox, ref_data)
+    res := ctrl_common_msg_handler(this, hw, msg, wp, lp) 
     #partial switch res {
         case .Call_Def_Proc: return DefSubclassProc(hw, msg, wp, lp)
         case .Immediate_Return: return 1
     }
 
     switch msg {
-        case WM_DESTROY: RemoveWindowSubclass(hw, edit_wnd_proc, sc_id)
+        case WM_NCDESTROY: 
+            RemoveWindowSubclass(hw, edit_wnd_proc, sc_id)
 
         case CM_EDIT_COLOR:
-            if cmb.foreColor != def_fore_clr || cmb.backColor != def_back_clr {
+            if this.foreColor != def_fore_clr || this.backColor != def_back_clr {
                 dc_handle:= dir_cast(wp, HDC)
                 // SetBkMode(dc_handle, Transparent)
-                if cmb.foreColor != def_fore_clr do SetTextColor(dc_handle, get_color_ref(cmb.foreColor))
-                if cmb.backColor != def_back_clr do SetBkColor(dc_handle, get_color_ref(cmb.backColor))
-                return toLRES(cmb._bkBrush)
+                if this.foreColor != def_fore_clr do SetTextColor(dc_handle, get_color_ref(this.foreColor))
+                if this.backColor != def_back_clr do SetBkColor(dc_handle, get_color_ref(this.backColor))
+                return toLRES(this._bkBrush)
             }
 
         case WM_KEYDOWN: // only works in Tb_combo style
-            if cmb.onKeyDown != nil {
+            if this.onKeyDown != nil {
                 kea:= new_key_event_args(wp)
-                cmb.onKeyDown(cmb, &kea)
+                this.onKeyDown(this, &kea)
             }
 
         case WM_KEYUP: // only works in Tb_combo style
-            if cmb.onKeyUp != nil {
+            if this.onKeyUp != nil {
                 kea:= new_key_event_args(wp)
-                cmb.onKeyUp(cmb, &kea)
+                this.onKeyUp(this, &kea)
             }        
     }
     return DefSubclassProc(hw, msg, wp, lp)

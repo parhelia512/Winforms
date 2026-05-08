@@ -68,12 +68,13 @@
 ==============================================================================================================*/
 
 
-
+#+feature using-stmt
 package winforms
 
 import "base:runtime"
 import api "core:sys/windows"
 import "core:reflect"
+import "core:fmt"
 
 globalSubClassID : int = 2001
 globalCtlID : UINT= 100
@@ -81,6 +82,7 @@ MOUSE_ENTER_EVENT      :: 1 << 0
 MOUSE_HOVER_EVENT      :: 1 << 1
 MOUSE_LEAVE_EVENT      :: 1 << 2
 
+CreateHandleProc :: proc(this: ^Control)
 
 // A base class for all controls & Form.
 Control :: struct
@@ -89,10 +91,10 @@ Control :: struct
 	name : string,
 	handle : HWND,
 	controlID : UINT,
-	parent : ^Form,
+	parent : ^Control,
 	text : string,
-	width, height : int,
-    xpos, ypos : int,
+	width, height : i32,
+    xpos, ypos : i32,
     font : Font,
 	backColor : uint,
 	foreColor : uint,
@@ -110,18 +112,19 @@ Control :: struct
 	_clsName : wstring,
 	_drawFlag: uint,
 	_cachedWidth, _cachedHeight : i32,
-	_fp_beforeCreation, _fp_afterCreation : CreateDelegate,
 	_fp_size_fix : ControlDelegate,
 	_inherit_color: bool,
 	_textable: bool,
 	_cmenuUsed: bool,
 	_hasFont: bool,
+	_autoSizable: bool,
 	_wtext : ^WideString,
 	_fcref : COLORREF,
 	_myRect : RECT,
 	_mouseEvents: bit_set[SpecialMouseEvents; u8],
 	_tmeFlags: DWORD,
-
+	_ownerForm: ^Form,
+	_createHandleProc: CreateHandleProc,
 	clrChanged : bool,
 
 	// Events
@@ -147,6 +150,7 @@ Control :: struct
     onKeyUp,
 	onKeyDown,
 	onKeyPress : KeyEventHandler,
+	onHandleCreated,
 	onDestroy : EventHandler,
 }
 
@@ -155,69 +159,100 @@ Control :: struct
 
 
 // Create a Control. Use this for all controls.
-create_control :: proc(c : ^Control)
+create_control :: proc(this : ^Control, width: i32 = 0, height: i32 = 0 )
 {
-	if c.handle != nil do return
-	// If it's a Combobox, it knows how to manage contril ID.
-	if c.kind != ControlKind.Combo_Box {
-		globalCtlID += 1
-    	c.controlID = globalCtlID
-	}
-
-	if c._fp_beforeCreation != nil do c._fp_beforeCreation(c)
-
-	width : i32 = 0
-	height : i32 = 0
-	c._tmeFlags = 0 
-	if c.kind != ControlKind.Number_Picker {
-		// NumberPicker needs zero width & height. It can find it's size later.
-		width = i32(c.width)
-		height = i32(c.height)
-	}
-	ctrl_txt_ptr : WCPTR = c.text == "" ? nil: to_wstring(c.text)
-
-    c.handle = CreateWindowEx(  c._exStyle,
-								c._clsName,
+	if this.handle != nil do return		
+	this._tmeFlags = 0 
+	ctlInfo := ControlStaticData[this.kind]
+	ctrl_txt_ptr : WCPTR = nil
+	if ctlInfo.isTextable && len(this.text) > 0 do ctrl_txt_ptr = this._wtext.ptr 
+    this.handle = CreateWindowEx(  this._exStyle,
+								ctlInfo.clsName,
 								ctrl_txt_ptr,
-								c._style,
-								i32(c.xpos),
-								i32(c.ypos),
+								this._style,
+								i32(this.xpos),
+								i32(this.ypos),
 								width,
 								height,
-								c.parent.handle,
-								dir_cast(c.controlID, HMENU),
+								this.parent.handle,
+								dir_cast(this.controlID, HMENU),
 								app.hInstance,
 								nil )
-	// ptf("Creation res %d\n", GetLastError())
 
-    if c.handle != nil {
-        c._isCreated = true
-        if c._hasFont do setfont_internal(c)
-		if c._fp_afterCreation != nil do c._fp_afterCreation(c)
-		GetClientRect(c.handle, &c._myRect)	
-		// if c._mouseEnterProc == nil do common_mouse_enter_handler
-		// if c._mouseLeaveProc == nil do c._mouseLeaveProc = common_mouse_leave_handler
-	}
-	else {
-		print("Failed to create control")
-		// context = runtime.default_context()
+    if this.handle != nil {
+        this._isCreated = true
+		GetClientRect(this.handle, &this._myRect)	
+		if ctlInfo.hasFont do setfont_internal(this)
+
+	}else {
+		ptf("Failed to create control, error code: %d\n", GetLastError())
     }
-
 }
 
+control_base_init :: proc(this: ^Control, parent: ^Control, x, y, w, h: i32, ctlCounter: ^int, ctxt: string = "")
+{
+	info := ControlStaticData[this.kind]
+	this.parent = parent
+	this.xpos = x
+	this.ypos = y
+	this.width = w
+	this.height = h
+	this._style = info.style
+	this._exStyle = info.exStyle
+	this.name = fmt.aprintf("%s%d", info.prefix, ctlCounter^)
+	this.controlID = globalCtlID
+
+	ctlCounter^ += 1
+	globalCtlID += 1
+	
+	if ctxt != "" && info.isTextable {
+		this.text = ctxt
+		this._wtext = new_widestring(ctxt)
+	}
+	if parent != nil {
+		styleSrc : ^Control = parent.kind == ControlKind.Group_Box? parent.parent : parent
+		if info.hasFont do font_clone(&styleSrc.font, &this.font, true) 
+		if info.bkMode == .Inherit_BGC {
+			this.backColor = styleSrc.backColor
+		} else if info.bkMode == .White_BGC {
+			this.backColor = def_back_clr
+		} 
+		this._ownerForm = parent.kind == .Form ? cast(^Form)parent : cast(^Form)parent._ownerForm
+		if info.blackFGC do this.foreColor = def_fore_clr
+		append(&this._ownerForm._controls, this)
+	}
+}
+
+control_base_dtor :: proc(this: ^Control)
+{
+	delete(this.name)
+	cinfo := ControlStaticData[this.kind]
+	if cinfo.isTextable && this._wtext != nil do widestring_destroy(this._wtext)
+	if cinfo.hasFont do font_destroy(&this.font)
+	if this._cmenuUsed do contextmenu_dtor(this.contextMenu)
+	// ptf("ctrl name: %s, cmenu: %s", this.name, this._cmenuUsed)
+}
+
+
+control_place_right :: proc(this: ^Control, rightOf: ^Control, gap: i32 = 10)
+{
+	newxpos := rightOf.xpos + rightOf.width + gap
+	control_set_position(this, newxpos, rightOf.ypos)
+	// ptf("New xpos: %d, rightOf.xpos: %d", newxpos, rightOf.xpos)
+}
 
 
 common_mouse_leave_handler :: proc(this: ^Control)
 {
 	this._isMouseEntered = false
-	alert2("Common Mouse leave message from %s", this.kind)
+	// alert2("Common Mouse leave message from %s", this.kind)
 }
 
 control_setpos :: #force_inline proc(this: ^Control, flag: UINT) {
     SetWindowPos(this.handle, nil, this.xpos, this.ypos, this.width, this.height, flag)
 }
 
-control_setpos2 :: #force_inline proc(hw: HWND, x, y, w, h: int, flag: UINT) {
+control_setpos2 :: #force_inline proc(hw: HWND, x, y, w, h: i32, flag: UINT) {
 	SetWindowPos(hw, nil, x, y, w, h, flag)
 }
 
@@ -248,15 +283,15 @@ control_enable :: proc(ctl : ^Control, bstate : bool)
 }
 
 // Get the right point of control
-cright :: proc(this: ^Control) -> int
+cright :: proc(this: ^Control) -> i32
 {
-	return int(map_parent_points(this).right)
+	return map_parent_points(this).right
 }
 
 // Get the bottom point of control
-cbottom :: proc(this: ^Control) -> int
+cbottom :: proc(this: ^Control) -> i32
 {
-	return int(map_parent_points(this).bottom)
+	return map_parent_points(this).bottom
 }
 
 // Hide or show a control.
@@ -317,31 +352,50 @@ control_set_font_name :: proc(ctl : ^Control, fn : string)
 }
 
 // To set the position of a control or form
-control_set_position :: proc(ctl : ^Control, x, y : int)
+control_set_position :: proc(ctl : ^Control, x, y : i32)
 {
-	mx : int = ctl.xpos if x == 0 else x
-	my : int = ctl.ypos if y == 0 else y
-	SetWindowPos(ctl.handle, nil, i32(mx), i32(my), 0, 0, SWP_NOSIZE | SWP_NOZORDER)
+	mx : i32 = ctl.xpos if x == 0 else x
+	my : i32 = ctl.ypos if y == 0 else y
+	
+	if ctl.kind == .Number_Picker {
+		np := cast(^NumberPicker)ctl
+		nump_set_pos(np, mx, my)
+		
+	} else {
+		SetWindowPos(ctl.handle, nil, mx, my, 0, 0, SWP_NOSIZE | SWP_NOZORDER)
+	}
+	
 }
 
 // To set the size of the control or form
-control_set_size :: proc(ctl : ^Control, width, height : int)
+control_set_size :: proc(ctl : ^Control, width, height : i32)
 {
-	mw : int = ctl.width if width == 0 else width
-	mh : int = ctl.height if height == 0 else height
-	SetWindowPos(ctl.handle, nil, 0, 0, i32(mw), i32(mh),SWP_NOMOVE | SWP_NOZORDER)
+	mw : i32 = ctl.width if width == 0 else width
+	mh : i32 = ctl.height if height == 0 else height
+	SetWindowPos(ctl.handle, nil, 0, 0, mw, mh, SWP_NOMOVE | SWP_NOZORDER)
 }
 
 // To set the text of the control or form. Note :- This is not applicable for all controls.
 control_set_text :: proc(ctl : ^Control, txt : string)
 {
-	if ctl._textable {
-		ctl.text = txt
-		if ctl._isCreated {
-			SetWindowText(ctl.handle, to_wstring(txt))
+	cinfo := ControlStaticData[ctl.kind]
+	if cinfo.isTextable == false do return	
+	ctl.text = txt
+	widestring_update(&ctl._wtext, txt)
+	if ctl._isCreated {
+		x := SetWindowText(ctl.handle, to_wstring(txt))
+		// ptf("SetWindowText result: %d", x)
+		if ctl._autoSizable {
+			if ctl.kind == .Label {
+				calculate_label_size(cast(^Label)ctl)
+			} else {
+				calculate_ctl_size(ctl)
+			}
+			
 		}
-	}
+	}	
 }
+
 
 // To get the text from the control or form.
 // Note :- This is not applicable for all controls.
@@ -384,7 +438,8 @@ control_Setfocus :: proc(ctl : ^Control)
 // This is used to set the defualt font right creating the control handle.
 @private setfont_internal :: proc(ctl : ^Control)
 {
-	if ctl._hasFont == false do return
+	cinfo := ControlStaticData[ctl.kind]
+	if cinfo.hasFont == false do return
 	if ctl.font.handle == nil do font_create_handle(&ctl.font)
 	SendMessage(ctl.handle, WM_SETFONT, WPARAM(ctl.font.handle), LPARAM(1))
 
@@ -514,7 +569,8 @@ control_get_text_wstr :: proc(ctl : Control, alloc := context.allocator) -> []u1
 		case WM_LBUTTONDOWN:
 			this._isPressed = true
 			if this.onMouseDown != nil {
-				mea := new_mouse_event_args(msg, wp, lp)
+				mea : MouseEventArgs
+				fill_mouse_event_args(&mea, msg, wp, lp)
 				this.onMouseDown(this, &mea)
 			}
 			return .Call_Def_Proc
@@ -522,14 +578,16 @@ control_get_text_wstr :: proc(ctl : Control, alloc := context.allocator) -> []u1
 		case WM_RBUTTONDOWN:
 			this._isPressed = true
 			if this.onRightMouseDown != nil {
-				mea := new_mouse_event_args(msg, wp, lp)
+				mea : MouseEventArgs
+				fill_mouse_event_args(&mea, msg, wp, lp)
 				this.onRightMouseDown(this, &mea)
 			}
 			return .Call_Def_Proc
 
 		case WM_LBUTTONUP:				
 			if this.onMouseUp != nil	{
-				mea := new_mouse_event_args(msg, wp, lp)
+				mea : MouseEventArgs
+				fill_mouse_event_args(&mea, msg, wp, lp)
 				this.onMouseUp(this, &mea)
 			}
 
@@ -542,7 +600,8 @@ control_get_text_wstr :: proc(ctl : Control, alloc := context.allocator) -> []u1
 
 		case WM_RBUTTONUP:
 			if this.onRightMouseUp != nil {
-				mea := new_mouse_event_args(msg, wp, lp)
+				mea : MouseEventArgs
+				fill_mouse_event_args(&mea, msg, wp, lp)
 				this.onRightMouseUp(this, &mea)
 			}
 			if this._isPressed && this.onRightClick != nil {
@@ -554,42 +613,13 @@ control_get_text_wstr :: proc(ctl : Control, alloc := context.allocator) -> []u1
 
 		case WM_MOUSEHWHEEL:
 			if this.onMouseScroll != nil {
-				mea := new_mouse_event_args(msg, wp, lp)
+				mea : MouseEventArgs
+				fill_mouse_event_args(&mea, msg, wp, lp)
 				this.onMouseScroll(this, &mea)
 			}
 			return .Call_Def_Proc
 
 		case WM_MOUSEMOVE: // Mouse Enter & Mouse Move is firing from here.
-			
-			// if this._spMMoveProc == nil {			
-			// 	if this.onMouseMove != nil {
-			// 		mea := new_mouse_event_args(msg, wp, lp)
-			// 		this.onMouseMove(this, &mea)
-			// 	}
-
-			// 	// Determine if we need to start/restart tracking
-			// 	needsLeave : bool = (this.onMouseEnter != nil || this.onMouseLeave != nil)
-			// 	needsHover : bool = (this.onMouseHover != nil)
-			// 	if (needsLeave || needsHover) {
-			// 		// alert2("Needs Tracking: ", this._isMouseTracking)
-			// 		if !this._isMouseTracking {
-			// 			flags : DWORD = 0
-			// 			if needsLeave do flags |= TME_LEAVE
-			// 			if needsHover do flags |= TME_HOVER
-
-			// 			// Start tracking
-			// 			track_mouse_move(this.handle, flags)
-			// 			this._isMouseTracking = true
-			// 			if this.onMouseEnter != nil && !this._isMouseEntered {
-			// 				this._isMouseEntered = true
-			// 				this.onMouseEnter(this, &gea)
-			// 			}
-			// 		}
-			// 	}
-				
-			// } else { 
-			// 	this._spMMoveProc(this, hw, msg, wp, lp)
-			// }	
 			if this.kind == .Combo_Box {
 				cmb_mouse_move_handler(cast(^ComboBox)this, hw, msg, wp, lp)
 			} else if this.kind == .Number_Picker {
@@ -597,9 +627,7 @@ control_get_text_wstr :: proc(ctl : Control, alloc := context.allocator) -> []u1
 			} else {
 				ctrl_mousemove_handler(this, hw, msg, wp, lp)
 			}
-			return .Call_Def_Proc
-			
-			
+			return .Call_Def_Proc			
 
 		case WM_MOUSEHOVER:
 			this._isMouseTracking = false
@@ -607,15 +635,6 @@ control_get_text_wstr :: proc(ctl : Control, alloc := context.allocator) -> []u1
 			return .Call_Def_Proc
 
 		case WM_MOUSELEAVE:
-			// // alert2("Mouse leave message received from %s", this.kind)
-			// if this._spMLeaveProc == nil {
-			// 	this._isMouseTracking = false
-			// 	this._isMouseEntered = false
-			// 	if this.onMouseLeave != nil do this.onMouseLeave(this, &gea)
-			// 	return .Call_Def_Proc
-			// } else {
-			// 	return this._spMLeaveProc(this)
-			// }
 			if this.kind == .Combo_Box {
 				cmb_mouse_leave_handler(cast(^ComboBox)this)
 			} else if this.kind == .Number_Picker {
@@ -623,8 +642,7 @@ control_get_text_wstr :: proc(ctl : Control, alloc := context.allocator) -> []u1
 			} else {
 				ctrl_mouseleave_handler(this)
 			}
-			return .Call_Def_Proc
-		
+			return .Call_Def_Proc		
 
 		case WM_CONTEXTMENU:
 			if this.contextMenu != nil do contextmenu_show(this.contextMenu, lp)
@@ -638,7 +656,8 @@ control_get_text_wstr :: proc(ctl : Control, alloc := context.allocator) -> []u1
 	ctrl_left_mousedown_handler :: proc(ctl: ^Control, msg: UINT,wpm: WPARAM, lpm: LPARAM)
 	{
 		if ctl.onMouseDown != nil {
-			mea := new_mouse_event_args(msg, wpm, lpm)
+			mea : MouseEventArgs
+			fill_mouse_event_args(&mea, msg, wpm, lpm)
 			ctl.onMouseDown(ctl, &mea)
 		}
 	}
@@ -646,7 +665,8 @@ control_get_text_wstr :: proc(ctl : Control, alloc := context.allocator) -> []u1
 	ctrl_left_mouseup_handler :: proc(ctl: ^Control, msg: UINT,wpm: WPARAM, lpm: LPARAM)
 	{
 		if ctl.onMouseUp != nil {
-			mea := new_mouse_event_args(msg, wpm, lpm)
+			mea : MouseEventArgs
+			fill_mouse_event_args(&mea, msg, wpm, lpm)
 			ctl.onMouseUp(ctl, &mea)
 		}
 		if ctl.onClick != nil {
@@ -661,7 +681,8 @@ control_get_text_wstr :: proc(ctl : Control, alloc := context.allocator) -> []u1
 	ctrl_right_mousedown_handler :: proc(ctl: ^Control, msg: UINT,wpm: WPARAM, lpm: LPARAM)
 	{
 		if ctl.onRightMouseDown != nil {
-			mea := new_mouse_event_args(msg, wpm, lpm)
+			mea : MouseEventArgs
+			fill_mouse_event_args(&mea, msg, wpm, lpm)
 			ctl.onRightMouseDown(ctl, &mea)
 		}
 	}
@@ -669,7 +690,8 @@ control_get_text_wstr :: proc(ctl : Control, alloc := context.allocator) -> []u1
 	ctrl_right_mouseup_handler :: proc(ctl: ^Control, msg: UINT,wpm: WPARAM, lpm: LPARAM)
 	{
 		if ctl.onRightMouseUp != nil {
-			mea := new_mouse_event_args(msg, wpm, lpm)
+			mea : MouseEventArgs
+			fill_mouse_event_args(&mea, msg, wpm, lpm)
 			ctl.onRightMouseUp(ctl, &mea)
 		}
 		if ctl.onRightClick != nil {
@@ -684,7 +706,8 @@ control_get_text_wstr :: proc(ctl : Control, alloc := context.allocator) -> []u1
 	ctrl_mousewheel_handler :: proc(ctl: ^Control, msg: UINT,wpm: WPARAM, lpm: LPARAM)
 	{
 		if ctl.onMouseScroll != nil {
-			mea := new_mouse_event_args(msg, wpm, lpm)
+			mea : MouseEventArgs
+			fill_mouse_event_args(&mea, msg, wpm, lpm)
 			ctl.onMouseScroll(ctl, &mea)
 		}
 	}
@@ -693,7 +716,8 @@ control_get_text_wstr :: proc(ctl : Control, alloc := context.allocator) -> []u1
 	{
 		if ctl._isMouseEntered {
 			if ctl.onMouseMove != nil {
-				mea := new_mouse_event_args(msg, wpm, lpm)
+				mea : MouseEventArgs
+				fill_mouse_event_args(&mea, msg, wpm, lpm)
 				ctl.onMouseMove(ctl, &mea)
 			}
 		}
@@ -753,12 +777,12 @@ ctrl_killfocus_handler :: proc(ctl: ^Control)
 		case .Font: ctrl_set_font(this, value)
 		case .Fore_Color: set_fore_color1(this, uint(value))
 		case .Enabled: control_enable(this, bool(value))
-		case .Height: control_set_size(this, this.width, int(value))
+		case .Height: control_set_size(this, this.width, i32(value))
 		case .Text: control_set_text(this, tostring(value))
 		case .Visible: control_visibile(this, bool(value))
-		case .Width: control_set_size(this, int(value), this.height)
-		case .Xpos: control_set_position(this, int(value), this.ypos)
-		case .Ypos: control_set_position(this, this.xpos, int(value))
+		case .Width: control_set_size(this, i32(value), this.height)
+		case .Xpos: control_set_position(this, i32(value), this.ypos)
+		case .Ypos: control_set_position(this, this.xpos, i32(value))
 	}
 }
 

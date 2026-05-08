@@ -47,7 +47,7 @@ import "core:fmt"
 import api "core:sys/windows"
 //import "core:slice"
 
-wcnListBox := L("ListBox")
+_lbxCount: int = 1
 LBX_STYLES : u32 = LBS_HASSTRINGS | WS_VSCROLL | WS_BORDER | LBS_NOTIFY
 
 ListBox:: struct 
@@ -64,7 +64,7 @@ ListBox:: struct
     hotIndex: int,
     hotItem: string,
     _selIndices: [dynamic]i32,
-    _dummyIndex: int,
+    _dummyIndex: i32,
     _bkBrush: HBRUSH,
     onSelectionChanged: EventHandler,
 }
@@ -173,7 +173,7 @@ listbox_get_selected_items:: proc(lbx: ^ListBox, alloc:= context.allocator) -> [
 }
 
 // Set an item at given index selected
-listbox_set_item_selected:: proc(lbx: ^ListBox, indx: int) 
+listbox_set_item_selected:: proc(lbx: ^ListBox, indx: i32) 
 {
     lbx._dummyIndex = indx
     if len(lbx.items) > 0 do SendMessage(lbx.handle, LB_SETCURSEL, WPARAM(i32(indx)), 0)
@@ -285,37 +285,47 @@ listbox_set_selected_index:: proc(lbx: ^ListBox, indx: int)
 }
 
 //============================================Private Functions==================================
-@private lbox_ctor:: proc(p: ^Form, x, y, w, h: int) -> ^ListBox 
+@private lbox_ctor:: proc(p: ^Control, x, y, w, h: i32) -> ^ListBox 
 {
     this:= new(ListBox)
-    init_control(this, p, x, y, w, h, .List_Box, COMM_CTRL_STYLES | LBX_STYLES, 0, wcnListBox, NO_TXT, FONTABLE)
-    this.backColor = app.clrWhite
-    this.foreColor = app.clrBlack
-	this._fp_beforeCreation = cast(CreateDelegate) lbx_before_creation
-	this._fp_afterCreation = cast(CreateDelegate) lbx_after_creation
+    this.kind = .List_Box
+    control_base_init(this, p, x, y, w, h, &_lbxCount)
+    this._createHandleProc = lbx_create_handle
     this._dummyIndex = -1
     return this
 }
 
-@private lbox_ctor1:: proc(parent: ^Form) -> ^ListBox 
+@private lbox_ctor1:: proc(parent: ^Control) -> ^ListBox 
 {
-    lb:= lbox_ctor(parent, 10, 10, 180, 200)
-    if parent.createChilds do create_control(lb)
-    return lb
+    this := lbox_ctor(parent, 10, 10, 180, 200)
+    if this._ownerForm.createChilds do create_control(this)
+    return this
 }
 
-@private lbox_ctor2:: proc(parent: ^Form, x, y: int) -> ^ListBox 
+@private lbox_ctor2:: proc(parent: ^Control, x, y: i32) -> ^ListBox 
 {
-    lb:= lbox_ctor(parent, x, y, 180, 200)
-    if parent.createChilds do create_control(lb)
-    return lb
+    this := lbox_ctor(parent, x, y, 180, 200)
+    if this._ownerForm.createChilds do create_control(this)
+    return this
 }
 
-@private lbox_ctor3:: proc(parent: ^Form, x, y, w, h: int) -> ^ListBox 
+@private lbox_ctor3:: proc(parent: ^Control, x, y, w, h: i32) -> ^ListBox 
 {
-    lb:= lbox_ctor(parent, x, y, w, h)
-    if parent.createChilds do create_control(lb)
-    return lb
+    this := lbox_ctor(parent, x, y, w, h)
+    if this._ownerForm.createChilds do create_control(this)
+    return this
+}
+
+@private lbx_create_handle :: proc(ctl: ^Control)
+{
+	this := cast(^ListBox)ctl
+	set_lbox_style_internal(this)	
+	create_control(ctl, this.width, this.height)
+	set_subclass(this, lbx_wnd_proc)
+    lbx_additem_internal(this)
+    if this._dummyIndex > -1 {
+        SendMessage(this.handle, LB_SETCURSEL, WPARAM(this._dummyIndex), 0)	
+    }
 }
 
 @private set_lbox_style_internal:: proc(this: ^ListBox) 
@@ -368,14 +378,14 @@ listbox_set_selected_index:: proc(lbx: ^ListBox, indx: int)
     }
 }
 
-@private lbx_before_creation:: proc(lbx: ^ListBox) {set_lbox_style_internal(lbx)}
+// @private lbx_before_creation:: proc(lbx: ^ListBox) {set_lbox_style_internal(lbx)}
 
-@private lbx_after_creation:: proc(lbx: ^ListBox) 
-{
-	set_subclass(lbx, lbx_wnd_proc)
-    lbx_additem_internal(lbx)
-    if lbx._dummyIndex > -1 do SendMessage(lbx.handle, LB_SETCURSEL, WPARAM(i32(lbx._dummyIndex)), 0)
-}
+// @private lbx_after_creation:: proc(lbx: ^ListBox) 
+// {
+// 	set_subclass(lbx, lbx_wnd_proc)
+//     lbx_additem_internal(lbx)
+//     if lbx._dummyIndex > -1 do SendMessage(lbx.handle, LB_SETCURSEL, WPARAM(i32(lbx._dummyIndex)), 0)
+// }
 
 @private listbox_property_setter:: proc(this: ^ListBox, prop: ListBoxProps, value: $T)
 {
@@ -406,13 +416,12 @@ listbox_set_selected_index:: proc(lbx: ^ListBox, indx: int)
     }
 }
 
-@private lbx_finalize:: proc(this: ^ListBox, scid: UINT_PTR) 
+@private lbx_finalize:: proc(this: ^ListBox) 
 {
     delete(this.items)
     delete(this._selIndices)
     delete_gdi_object(this._bkBrush)
-    font_destroy(&this.font)
-    RemoveWindowSubclass(this.handle, lbx_wnd_proc, scid)
+    control_base_dtor(this)
     free(this)
 }
 
@@ -420,131 +429,63 @@ listbox_set_selected_index:: proc(lbx: ^ListBox, indx: int)
                                                     sc_id: UINT_PTR, ref_data: DWORD_PTR) -> LRESULT 
 {
     context = global_context 
-    // context = runtime.default_context()
+    this := control_cast(ListBox, ref_data)
+    res := ctrl_common_msg_handler(this, hw, msg, wp, lp) 
+    #partial switch res {
+        case .Call_Def_Proc: return DefSubclassProc(hw, msg, wp, lp)
+        case .Immediate_Return: return 1
+    }
     
     //display_msg(msg)
     switch msg {
-        case WM_DESTROY: 
-            lbx:= control_cast(ListBox, ref_data)
-            lbx_finalize(lbx, sc_id)
-
-        case WM_CONTEXTMENU:
-            lbx:= control_cast(ListBox, ref_data)
-		    if lbx.contextMenu != nil do contextmenu_show(lbx.contextMenu, lp)
+        case WM_NCDESTROY: 
+            RemoveWindowSubclass(this.handle, lbx_wnd_proc, sc_id)
+            lbx_finalize(this)
 
         case CM_LIST_COLOR:
-            lbx:= control_cast(ListBox, ref_data)
             // ptf("lbx draw flag %d\n", lbx._drawFlag)
-            if lbx._drawFlag > 0 {
+            if this._drawFlag > 0 {
                 dc_handle:= dir_cast(wp, HDC)
                 api.SetBkMode(dc_handle, api.BKMODE.TRANSPARENT)
-                if lbx.foreColor != def_fore_clr do SetTextColor(dc_handle, get_color_ref(lbx.foreColor))
-                if lbx._bkBrush == nil do lbx._bkBrush = CreateSolidBrush(get_color_ref(lbx.backColor))
-                
+                if this.foreColor != def_fore_clr {
+                    SetTextColor(dc_handle, get_color_ref(this.foreColor))
+                }
+                if this._bkBrush == nil {
+                    this._bkBrush = CreateSolidBrush(get_color_ref(this.backColor))
+                }
             }
-            return toLRES(lbx._bkBrush)
+            return toLRES(this._bkBrush)
 
         case CM_CTLCOMMAND:
-            lbx:= control_cast(ListBox, ref_data)
             ncode:= HIWORD(wp)
             switch ncode {
                 case LBN_DBLCLK:
-                    if lbx.onDoubleClick != nil {
+                    if this.onDoubleClick != nil {
                         ea:= new_event_args()
-                        lbx.onDoubleClick(lbx, &ea)
+                        this.onDoubleClick(this, &ea)
                     }
                 case LBN_KILLFOCUS:
-                    if lbx.onLostFocus != nil {
+                    if this.onLostFocus != nil {
                         ea:= new_event_args()
-                        lbx.onLostFocus(lbx, &ea)
+                        this.onLostFocus(this, &ea)
                     }
                 case LBN_SELCHANGE:
-                    sel_indx:= SendMessage(lbx.handle, LB_GETCURSEL, 0, 0)
+                    sel_indx:= SendMessage(this.handle, LB_GETCURSEL, 0, 0)
                     if sel_indx != LB_ERR {
-                        if lbx.onSelectionChanged != nil {
+                        if this.onSelectionChanged != nil {
                             ea:= new_event_args()
-                            lbx.onSelectionChanged(lbx, &ea)
+                            this.onSelectionChanged(this, &ea)
                         }
                     }
 
                 case LBN_SETFOCUS:
-                    if lbx.onGotFocus != nil {
+                    if this.onGotFocus != nil {
                         ea:= new_event_args()
-                        lbx.onGotFocus(lbx, &ea)
+                        this.onGotFocus(this, &ea)
                     }
 
-                case LBN_SELCANCEL:
-                    //print("sel cancel")
-            }
-
-        case WM_LBUTTONDOWN: 
-            lbx:= control_cast(ListBox, ref_data)           
-            if lbx.onMouseDown != nil {
-                mea:= new_mouse_event_args(msg, wp, lp)
-                lbx.onMouseDown(lbx, &mea)
-                return 0
-            }
-
-        case WM_LBUTTONUP:
-            lbx:= control_cast(ListBox, ref_data)
-            if lbx.onMouseUp != nil {
-                mea:= new_mouse_event_args(msg, wp, lp)
-                lbx.onMouseUp(lbx, &mea)
-            }            
-            if lbx.onClick != nil {
-                ea:= new_event_args()
-                lbx.onClick(lbx, &ea)
-                return 0
-            }
-
-        case WM_RBUTTONDOWN:  
-            lbx:= control_cast(ListBox, ref_data)          
-            if lbx.onRightMouseDown != nil {
-                mea:= new_mouse_event_args(msg, wp, lp)
-                lbx.onRightMouseDown(lbx, &mea)
-            }
-
-        case WM_RBUTTONUP:
-            lbx:= control_cast(ListBox, ref_data)
-            if lbx.onRightMouseUp != nil {
-                mea:= new_mouse_event_args(msg, wp, lp)
-                lbx.onRightMouseUp(lbx, &mea)
-            }            
-            if lbx.onRightClick != nil {
-                ea:= new_event_args()
-                lbx.onRightClick(lbx, &ea)
-                return 0
-            }
-
-        case WM_MOUSEHWHEEL:
-            lbx:= control_cast(ListBox, ref_data)
-            if lbx.onMouseScroll != nil {
-                mea:= new_mouse_event_args(msg, wp, lp)
-                lbx.onMouseScroll(lbx, &mea)
-            }
-
-        case WM_MOUSEMOVE: // Mouse Enter & Mouse Move is happening here.
-            lbx:= control_cast(ListBox, ref_data)
-            if lbx._isMouseEntered {
-                if lbx.onMouseMove != nil {
-                    mea:= new_mouse_event_args(msg, wp, lp)
-                    lbx.onMouseMove(lbx, &mea)
-                }
-            }
-            else {
-                lbx._isMouseEntered = true
-                if lbx.onMouseEnter != nil  {
-                    ea:= new_event_args()
-                    lbx.onMouseEnter(lbx, &ea)
-                }
-            }
-
-         case WM_MOUSELEAVE:
-            lbx:= control_cast(ListBox, ref_data)
-            lbx._isMouseEntered = false
-            if lbx.onMouseLeave != nil {
-                ea:= new_event_args()
-                lbx.onMouseLeave(lbx, &ea)
+                // case LBN_SELCANCEL:
+                //     //print("sel cancel")
             }
 
         case: return DefSubclassProc(hw, msg, wp, lp)

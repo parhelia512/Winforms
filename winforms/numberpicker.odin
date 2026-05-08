@@ -39,7 +39,8 @@ import api "core:sys/windows"
 
 
 is_np_inited : bool = false    
-wcnNumPick := L("msctls_updown32") 
+_npCounter : int = 1
+ 
 NP_STYLES : u32 = UDS_ALIGNRIGHT | UDS_ARROWKEYS | UDS_AUTOBUDDY | UDS_HOTTRACK   
 
 //MAX_VALUE :: 16 // Increase this value if you need more than 15 digits on 
@@ -71,6 +72,7 @@ NumberPicker :: struct
     _tbrc : RECT,
     _udrc : RECT,
     _myrc : RECT,
+    _borderPts : [4]POINT,
     _npRect: RECT,
     _updatedTxt : string,
     _topEdgeFlag : DWORD,
@@ -118,7 +120,7 @@ numberpicker_set_decimal_precision :: proc(this: ^NumberPicker, value: int)
 
 
 //===================================================================Private Functions======================
-@private np_ctor :: proc(p : ^Form, x, y, w, h : int) -> ^NumberPicker
+@private np_ctor :: proc(p : ^Control, x, y, w, h : i32) -> ^NumberPicker
 {
     if !is_np_inited { // Then we need to initialize the date class control.
         is_np_inited = true
@@ -126,69 +128,118 @@ numberpicker_set_decimal_precision :: proc(this: ^NumberPicker, value: int)
         InitCommonControlsEx(&app.iccx)
     }
     this := new(NumberPicker)
-    init_control(this, p, x, y, w, h, .Number_Picker, COMM_CTRL_STYLES | NP_STYLES, 0, 
-                    wcnNumPick, TXTABLE, FONTABLE)
+    this.kind = .Number_Picker
+    control_base_init(this, p, x, y, w, h, &_npCounter, "0")
+    this._createHandleProc = nump_create_handle
     this.step = 1
     this._hasFont = true
-    this.backColor = app.clrWhite
-    this.foreColor = app.clrBlack
     this.minRange = 0
     this.maxRange = 100
     this.decimalPrecision = 0
     this.formatString = "%d"
-	this._fp_beforeCreation = cast(CreateDelegate) np_before_creation
-	this._fp_afterCreation = cast(CreateDelegate) np_after_creation
-    this._buddyStyle = WS_CHILD | WS_VISIBLE | ES_NUMBER | WS_TABSTOP | WS_BORDER
-    this._buddyExStyle = WS_EX_LTRREADING | WS_EX_LEFT
+    this._buddyStyle = WS_CHILD | WS_VISIBLE | ES_NUMBER | WS_TABSTOP// | WS_BORDER
+    this._buddyExStyle = WS_EX_LEFT //| WS_EX_CLIENTEDGE // WS_EX_LTRREADING | WS_EX_LEFT // | WS_EX_CLIENTEDGE
     this._topEdgeFlag = BF_TOPLEFT
     this._botEdgeFlag = BF_BOTTOM
     return this
 }
 
-@private np_ctor1 :: proc(parent : ^Form) -> ^NumberPicker
+@private np_ctor1 :: proc(parent : ^Control) -> ^NumberPicker
 {
-    np := np_ctor(parent,10, 10, 80, 25 )
-    alloc_value_array(np)
-    if parent.createChilds do create_control(np)
-    return np
+    this := np_ctor(parent,10, 10, 100, 25 )
+    alloc_value_array(this)
+    if this._ownerForm.createChilds do create_control(this)
+    return this
 }
 
-@private np_ctor2 :: proc(parent : ^Form, x, y : int, deciPrec: int = 0, step: f32 = 1) -> ^NumberPicker
+@private np_ctor2 :: proc(parent : ^Control, x, y : i32, 
+                            deciPrec: int = 0, step: f32 = 1, btnLeft: bool = false) -> ^NumberPicker
 {
-    np := np_ctor(parent, x, y, 80, 25)
-    set_decimal_precision(np, deciPrec)
-    alloc_value_array(np)
-    np.step = step
-    if parent.createChilds do create_control(np)
-    return np
+    this := np_ctor(parent, x, y, 100, 25)
+    this.buttonOnLeft = btnLeft
+    set_decimal_precision(this, deciPrec)
+    alloc_value_array(this)
+    this.step = step
+    if this._ownerForm.createChilds do create_control(this)
+    return this
 }
 
-@private np_ctor3 :: proc(parent : ^Form, x, y, w, h : int, deciPrec: int = 0, step: f32 = 1) -> ^NumberPicker
+@private np_ctor3 :: proc(parent : ^Control, x, y, w, h : i32, 
+                            deciPrec: int = 0, step: f32 = 1, btnLeft: bool = false) -> ^NumberPicker
 {
-    np := np_ctor(parent, x, y, w, h)
-    set_decimal_precision(np, deciPrec)
-    alloc_value_array(np)
-    np.step = step
-    if parent.createChilds do create_control(np)
-    return np
+    this := np_ctor(parent, x, y, w, h)
+    this.buttonOnLeft = btnLeft
+    set_decimal_precision(this, deciPrec)
+    alloc_value_array(this)
+    this.step = step
+    if this._ownerForm.createChilds do create_control(this)
+    return this
 }
 
-@private set_np_styles :: proc(np : ^NumberPicker)
+@private nump_create_handle :: proc(ctl: ^Control)
 {
-    if np.buttonOnLeft {
-        np._style ~= UDS_ALIGNRIGHT
-        np._style |= UDS_ALIGNLEFT
-        np._topEdgeFlag = BF_TOP
-        np._botEdgeFlag = BF_BOTTOMRIGHT
-        if np._txtPos == SimpleTextAlignment.Left {np._txtPos = SimpleTextAlignment.Right}
+	this := cast(^NumberPicker)ctl
+	if !is_np_inited {
+        icex : INITCOMMONCONTROLSEX
+        icex.dwSize = size_of(icex)
+        icex.dwIcc = ICC_UPDOWN_CLASS
+        InitCommonControlsEx(&icex)
+        is_np_inited = true
     }
-    switch np.textAlignment {
-        case .Left : np._buddyStyle |= ES_LEFT
-        case .Center : np._buddyStyle |= ES_CENTER
-        case .Right : np._buddyStyle |= ES_RIGHT
+    set_np_styles(this)
+    this._bgcRef = get_color_ref(this.backColor)	
+	create_control(ctl, 0, 0)
+	np_after_creation(this)	
+}
+
+@private nump_set_pos :: proc(np : ^NumberPicker, x, y : i32)
+{
+    np.xpos = x
+    np.ypos = y
+    ptf("tbrc: %d, %d, %d, %d", np._tbrc.left, np._tbrc.top, np._tbrc.right, np._tbrc.bottom)
+    ptf("udrc: %d, %d, %d, %d", np._udrc.left, np._udrc.top, np._udrc.right, np._udrc.bottom)
+    SetWindowPos(np._buddyHandle, nil, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER)
+    SendMessage(np.handle, UDM_SETBUDDY, WPARAM(np._buddyHandle), 0)
+    
+    // if np.buttonOnLeft {        
+    //     SetWindowPos(np.handle, nil, i32(x), i32(y), 0, 0, SWP_NOSIZE | SWP_NOZORDER)
+    //     GetClientRect(np.handle, &np._udrc)
+    //     buddyx := x + int(np._udrc.right) + 1
+    //     SetWindowPos(np._buddyHandle, nil, i32(buddyx), i32(y), 0, 0, SWP_NOSIZE | SWP_NOZORDER)
+    // } else {
+    //     // ptf("tbrc right1: %d", np._tbrc.right)
+    //     SetWindowPos(np._buddyHandle, nil, i32(x), i32(y), 0, 0, SWP_NOSIZE | SWP_NOZORDER)
+    //     // GetClientRect(np.handle, &np._tbrc)
+    //     udx := x + int(np._udrc.right) + 40 
+    //     ptf("Setting nump pos: %d, %d, udx: %d", x, y, udx)
+    //     ptf("tbrc right2: %d", np._tbrc.right)
+    //     SetWindowPos(np.handle, nil, i32(udx), i32(y), 0, 0, SWP_NOSIZE | SWP_NOZORDER)
+    //     GetClientRect(np.handle, &np._udrc)
+    //     ptf("udrc: %d, %d, %d, %d", np._udrc.left, np._udrc.top, np._udrc.right, np._udrc.bottom)
+    // }
+    // SetRect(&np._myrc, i32(np.xpos), i32(np.ypos), i32(np.xpos + np.width), i32(np.ypos + np.height))
+}
+
+@private set_np_styles :: proc(this : ^NumberPicker)
+{
+    if this.buttonOnLeft {
+        this._style ~= UDS_ALIGNRIGHT
+        this._style |= UDS_ALIGNLEFT
+        this._topEdgeFlag = BF_TOP
+        this._botEdgeFlag = BF_BOTTOMRIGHT
+        if this._txtPos == SimpleTextAlignment.Left {
+            this._txtPos = SimpleTextAlignment.Right
+            
+        }
     }
-    clr : Color = new_color(0xABABAB) // Gray color for edit control border
-    np._borderBrush = CreateSolidBrush(clr.ref)
+    switch this.textAlignment {
+        case .Left : this._buddyStyle |= ES_LEFT
+        case .Center : this._buddyStyle |= ES_CENTER
+        case .Right : this._buddyStyle |= ES_RIGHT
+    }
+    // clr : Color = new_color(0xB4B4B4) //(0xABABAB) // Gray color for edit control border
+    // this._borderBrush = CreateSolidBrush(clr.ref) 
+    // this._borderPen = CreatePen(PS_SOLID, 1, get_color_ref(0xffffff))
 }
 
 @private np_set_range_internal :: proc(np : ^NumberPicker)
@@ -258,27 +309,61 @@ numberpicker_set_decimal_precision :: proc(this: ^NumberPicker, value: int)
     // ptf("array size %d", arr_len)
 }
 
-@private set_rects_and_size :: proc(np : ^NumberPicker)
+@private set_rects_and_size :: proc(this : ^NumberPicker)
 {
     /* Mouse leave from a number picker is big problem. Since it is a combo control,
      * So here, we are trying to solve it somehow.
      * There is no magic in it. We just create a big RECT. It can comprise the edit & updown.
      * So, we will map the mouse points into parent's client rect size. Then we will
      * check if those points are inside our big rect. If yes, mouse is on us. Otherwise mouse leaved. */
+    this._tbrc = get_rect(this._buddyHandle) // Textbox rect
+    this._udrc = get_rect(this.handle) // Updown btn rect
     
-    np._tbrc = get_rect(np._buddyHandle) // Textbox rect
-    np._udrc = get_rect(np.handle) // Updown btn rect
+    /* We need to draw a border on 3 sides of our buddy control.
+     * So we are preparing the pen and rect here. We will update
+     * the rect when control get resized or moved..............*/ 
+    this._borderPen = CreatePen(PS_SOLID, 2, get_color_ref(0xB4B4B4))
+    if this.buttonOnLeft {  // ⊐
+        this._borderPts[0].x = 0 
+        this._borderPts[0].y = 0    // Top-left
+
+        this._borderPts[1].x = this._tbrc.right + 2
+        this._borderPts[1].y = 0    // Top-right
+
+        this._borderPts[2].x = this._tbrc.right + 2
+        this._borderPts[2].y = this._tbrc.bottom + 1  // Bottom-right
+
+        this._borderPts[3].x = 0
+        this._borderPts[3].y = this._tbrc.bottom + 1 // Bottom-left
+
+    } else {  // ⊏
+        this._borderPts[0].x = this._tbrc.right + 2
+        this._borderPts[0].y = 0    // Top-Right
+
+        this._borderPts[1].x = 0
+        this._borderPts[1].y = 0         // Top-Left
+
+        this._borderPts[2].x = 0
+        this._borderPts[2].y = this._tbrc.bottom + 1 // Bottom-Left
+
+        this._borderPts[3].x = this._tbrc.right + 2
+        this._borderPts[3].y = this._tbrc.bottom + 1 // Bottom-Right
+    }
 }
 
 @private resize_buddy :: proc(np : ^NumberPicker)
 {
     // Here we are adjusting the edit control near to updown control.
     if np.buttonOnLeft {
-        SetWindowPos(np._buddyHandle, nil, i32(np.xpos) + np._udrc.right, i32(np.ypos), np._tbrc.right, np._tbrc.bottom, swp_flag)
+        // GetClientRect(np.handle, &np._udrc)
+        // SetWindowPos(np._buddyHandle, nil, i32(np.xpos) + np._udrc.right, i32(np.ypos), np._tbrc.right, np._tbrc.bottom, swp_flag)
         np._lineX = np._tbrc.left
+        // print("307")
     } else {
-        SetWindowPos(np._buddyHandle, nil, i32(np.xpos), i32(np.ypos), np._tbrc.right - 2, np._tbrc.bottom, swp_flag)
-        np._lineX = np._tbrc.right - 3
+        // GetClientRect(np.handle, &np._tbrc)
+        // SetWindowPos(np._buddyHandle, nil, i32(np.xpos), i32(np.ypos), np._tbrc.right - 2, np._tbrc.bottom, swp_flag)
+        np._lineX = np._tbrc.right - 2
+        // print("312")
     }
 }
 
@@ -288,31 +373,32 @@ numberpicker_set_decimal_precision :: proc(this: ^NumberPicker, value: int)
     SendMessage(np._buddyHandle, EM_SETSEL, WPARAM(wpm), 0)
 }
 
-@private np_before_creation :: proc(np : ^NumberPicker)
-{
-    if !is_np_inited {
-        icex : INITCOMMONCONTROLSEX
-        icex.dwSize = size_of(icex)
-        icex.dwIcc = ICC_UPDOWN_CLASS
-        InitCommonControlsEx(&icex)
-        is_np_inited = true
-    }
-    set_np_styles(np)
-    np._bgcRef = get_color_ref(np.backColor)
-}
+// @private np_before_creation :: proc(np : ^NumberPicker)
+// {
+//     if !is_np_inited {
+//         icex : INITCOMMONCONTROLSEX
+//         icex.dwSize = size_of(icex)
+//         icex.dwIcc = ICC_UPDOWN_CLASS
+//         InitCommonControlsEx(&icex)
+//         is_np_inited = true
+//     }
+//     set_np_styles(np)
+//     np._bgcRef = get_color_ref(np.backColor)
+// }
 
 @private np_after_creation :: proc(this : ^NumberPicker)
 {
+    
     ctl_id : UINT= globalCtlID // Use global control ID & update it.
     globalCtlID += 1
     this._buddyHandle = CreateWindowEx( this._buddyExStyle,
                                         to_wstring("Edit"),
                                         nil,
                                         this._buddyStyle,
-                                        i32(this.xpos),
-                                        i32(this.ypos),
-                                        i32(this.width),
-                                        i32(this.height),
+                                        this.xpos,
+                                        this.ypos,
+                                        this.width,
+                                        this.height,
                                         this.parent.handle,
                                         dir_cast(ctl_id, HMENU),
                                         app.hInstance,
@@ -320,6 +406,8 @@ numberpicker_set_decimal_precision :: proc(this: ^NumberPicker, value: int)
 
     
     if this.handle != nil && this._buddyHandle != nil {
+        
+        // this._bkBrush = CreateSolidBrush(get_color_ref(this.backColor))
         // HWND oldBuddy = HWND(SendMessage(this.handle, UDM_SETBUDDY, convert_to(WPARAM, this._buddyHandle), 0))
         set_np_subclass(this, np_wnd_proc, buddy_wnd_proc)
         if this.font.handle != this.parent.font.handle || this.font.handle == nil {
@@ -332,9 +420,10 @@ numberpicker_set_decimal_precision :: proc(this: ^NumberPicker, value: int)
         SendMessage(this.handle, UDM_SETRANGE32, WPARAM(this.minRange), LPARAM(this.maxRange))
 
         set_rects_and_size(this)
+        // ptf("tbrc: %d, %d, %d, %d", this._tbrc.left, this._tbrc.top, this._tbrc.right, this._tbrc.bottom)
         resize_buddy(this)
-        if oldBuddy != nil do SendMessage(oldBuddy, CM_BUDDY_RESIZE, 0, 0)
-        SetRect(&this._myrc, i32(this.xpos), i32(this.ypos), i32(this.xpos + this.width), i32(this.ypos + this.height))
+        // if oldBuddy != nil do SendMessage(oldBuddy, CM_BUDDY_RESIZE, 0, 0)
+        SetRect(&this._myrc, this.xpos, this.ypos, this.xpos + this.width, this.ypos + this.height)
         np_display_value_internal(this)
     }
 }
@@ -353,14 +442,20 @@ numberpicker_set_decimal_precision :: proc(this: ^NumberPicker, value: int)
             when T == int {
                 this.minRange = value
                 if this._isCreated {
-                    SendMessage(this.handle, UDM_SETRANGE32, WPARAM(int(this.minRange)), LPARAM(int(this.maxRange)))
+                    SendMessage(this.handle, 
+                                UDM_SETRANGE32, 
+                                WPARAM(int(this.minRange)), 
+                                LPARAM(int(this.maxRange)))
                 }
             }
         case .Max_Range:
             when T == int {
                 this.maxRange = value
                 if this._isCreated {
-                    SendMessage(this.handle, UDM_SETRANGE32, WPARAM(int(this.minRange)), LPARAM(int(this.maxRange)))
+                    SendMessage(this.handle, 
+                                UDM_SETRANGE32, 
+                                WPARAM(int(this.minRange)), 
+                                LPARAM(int(this.maxRange)))
                 }
             }
 
@@ -397,13 +492,30 @@ numberpicker_set_decimal_precision :: proc(this: ^NumberPicker, value: int)
 	This line has the same back color of edit control. So the border is hidden. 
 	And the control will look like the one in .NET.  
     ===========================================================================*/
-    FrameRect(hdc, &this._tbrc, this._borderBrush)
-    fpen: HPEN = CreatePen(PS_SOLID, 2, get_color_ref(this.backColor))
-    defer delete_gdi_object(fpen)
-    hOldObj := SelectObject(hdc, HGDIOBJ(fpen) )
+    // this._tbrc.right -= 1
+    // FrameRect(hdc, &this._tbrc, this._borderBrush)
+    
+    // DrawEdge(hdc, &this._tbrc, BDR_SUNKENOUTER, BF_LEFT | BF_TOP | BF_BOTTOM);
+
+    
+    bclr := get_color_ref(0xB4B4B4)
+    hPen := CreatePen(PS_SOLID, 2, bclr)
+    defer delete_gdi_object(hPen)
+    hOldPen := SelectObject(hdc, HGDIOBJ(hPen))
+    pts : [4]POINT
+    
+    
+    Polyline(hdc, &pts[0], 4)
+
+    // fpen: HPEN = CreatePen(PS_SOLID, 2, get_color_ref(0xFFFFFF)) // Same as edit control's back color
+    // defer delete_gdi_object(fpen)
+
+
+    hOldObj := SelectObject(hdc, HGDIOBJ(uintptr(this._borderPen) ))
     MoveToEx(hdc, this._lineX, 1, nil)
-    LineTo(hdc, this._lineX, this._tbrc.bottom - 2)
+    LineTo(hdc, this._lineX, this._tbrc.bottom - 1)
     SelectObject(hdc, hOldObj)
+
 }
 
 // Special subclassing for NumberPicker control. Remove_subclass is written in dtor
@@ -420,7 +532,8 @@ numberpicker_set_decimal_precision :: proc(this: ^NumberPicker, value: int)
 @private nump_mouse_move_handler :: proc(this: ^NumberPicker, hw: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
 {
     if this.onMouseMove != nil {
-        mea := new_mouse_event_args(msg, wp, lp)
+        mea : MouseEventArgs
+		fill_mouse_event_args(&mea, msg, wp, lp)
         this.onMouseMove(this, &mea)
     }
     
@@ -469,14 +582,17 @@ numberpicker_set_decimal_precision :: proc(this: ^NumberPicker, value: int)
 }
 
 
-@private np_finalize :: proc(this: ^NumberPicker, scid: UINT_PTR)
+@private np_finalize :: proc(this: ^NumberPicker)
 {
     delete_gdi_object(this._bkBrush)
-    delete_gdi_object(this._borderBrush)
-    font_destroy(&this.font)
-    if SpecialMouseEvents.Mouse_Hover in this._mouseEvents do timer_dtor(this._hoverTimer)
-    RemoveWindowSubclass(this.handle, np_wnd_proc, scid)  
+    delete_gdi_object(this._borderBrush)   
+    delete_gdi_object(this._borderPen) 
+    if SpecialMouseEvents.Mouse_Hover in this._mouseEvents {
+        timer_dtor(this._hoverTimer)      
+    }
     delete(this._disValArr)  
+    control_base_dtor(this)
+    
     free(this)
 }
 
@@ -485,31 +601,32 @@ numberpicker_set_decimal_precision :: proc(this: ^NumberPicker, value: int)
                                         sc_id: UINT_PTR, ref_data: DWORD_PTR) -> LRESULT
 {
     context = global_context 
-    nump := control_cast(NumberPicker, ref_data)
-    
-    res := ctrl_common_msg_handler(nump, hw, msg, wp, lp) 
+    this := control_cast(NumberPicker, ref_data)
+    // display_msg(msg)
+    res := ctrl_common_msg_handler(this, hw, msg, wp, lp) 
     #partial switch res {
         case .Call_Def_Proc: return DefSubclassProc(hw, msg, wp, lp)
         case .Immediate_Return: return 1
     }
 
     switch msg {
-        case WM_TIMER:
-        if nump.onMouseHover != nil {
-            timer_stop(nump._hoverTimer)
-            nump.onMouseHover(nump, &gea)
+    case WM_TIMER:
+        if this.onMouseHover != nil {
+            timer_stop(this._hoverTimer)
+            this.onMouseHover(this, &gea)
             return 0
         }
-    case WM_DESTROY :             
-        np_finalize(nump, sc_id)
-        return 0
+    case WM_NCDESTROY:     
+        RemoveWindowSubclass(this.handle, np_wnd_proc, sc_id)        
+        np_finalize(this)
+        
 
-    case WM_PAINT :
-        if nump.onPaint != nil {
+    case WM_PAINT:
+        if this.onPaint != nil {
             ps : PAINTSTRUCT
             hdc := BeginPaint(hw, &ps)
             pea := new_paint_event_args(&ps)
-            nump.onButtonPaint(nump, &pea)
+            this.onButtonPaint(this, &pea)
             EndPaint(hw, &ps)
             return 0
         }
@@ -517,22 +634,22 @@ numberpicker_set_decimal_precision :: proc(this: ^NumberPicker, value: int)
     case CM_NOTIFY :
         nm := dir_cast(lp, ^NMUPDOWN)
         if nm.hdr.code == UDN_DELTAPOS {
-            tbstr : string = get_ctrl_text_internal(nump._buddyHandle)
+            tbstr : string = get_ctrl_text_internal(this._buddyHandle)
             new_val, _ := strconv.parse_f32(tbstr)
-            nump.value = new_val
+            this.value = new_val
             defer delete(tbstr)                
-            np_set_value_internal(nump, nm.iDelta)                
+            np_set_value_internal(this, nm.iDelta)                
         }
 
-        if nump.onValueChanged != nil {
+        if this.onValueChanged != nil {
             ea := new_event_args()
-            nump.onValueChanged(nump, &ea)
+            this.onValueChanged(this, &ea)
         }
         return 0       
 
     case WM_ENABLE :
         api.EnableWindow(hw, auto_cast(wp))
-        api.EnableWindow(nump._buddyHandle, auto_cast(wp))
+        api.EnableWindow(this._buddyHandle, auto_cast(wp))
         return 0
 
     case : 
@@ -546,75 +663,104 @@ numberpicker_set_decimal_precision :: proc(this: ^NumberPicker, value: int)
                                             sc_id: UINT_PTR, ref_data: DWORD_PTR) -> LRESULT
 {
     context = global_context
-    nump := control_cast(NumberPicker, ref_data)
+    this := control_cast(NumberPicker, ref_data)
 
-    res := ctrl_common_msg_handler(nump, hw, msg, wp, lp) 
+    res := ctrl_common_msg_handler(this, hw, msg, wp, lp) 
     #partial switch res {
         case .Call_Def_Proc: return DefSubclassProc(hw, msg, wp, lp)
         case .Immediate_Return: return 1
     }
 
     switch msg {
-        case WM_DESTROY: RemoveWindowSubclass(hw, buddy_wnd_proc, sc_id)
-        case WM_PAINT:
-            /* 
-             * We are drawing the edge line over the edit border.
-             * Because, we need our edit & updown look like a single control. 
-             */            
-            res := DefSubclassProc(hw, msg, wp, lp)
-            hdc : HDC = GetWindowDC(hw)
-            defer ReleaseDC(hw, hdc)
-            np_paint_buddy_border(nump, hdc)           
-            return res  
+        case WM_NCCALCSIZE:
+            /* By default, arrow button has a border on 3 sides.
+             * But we don't use WS_BORDER style for this edit control.
+             * So, we need to draw a border on the 3 sides of this edit.
+             * To do that, we need to shrink the client area and make room..
+             * for our border......................................... */ 
+            if wp == 1 {
+                pncsp := dir_cast(lp, ^NCCALCSIZE_PARAMS)
+                if !this.buttonOnLeft {
+                    pncsp.rgrc[0].left += 1
+                    pncsp.rgrc[0].top += 1
+                    pncsp.rgrc[0].right -= 2
+                    pncsp.rgrc[0].bottom -= 1 
+                } else {
+                    pncsp.rgrc[0].left += 2
+                    pncsp.rgrc[0].top += 1
+                    pncsp.rgrc[0].right -= 1
+                    pncsp.rgrc[0].bottom -= 1 
+                }                               
+                return 0
+            }            
+
+        case WM_NCPAINT:
+            // Drawing border on 3 sides of the edit control.
+            // Points are pre-calculated. Make sure to adjust them
+            // when control resized or moved.
+            hrgn := cast(HRGN)wp     
+            flags := DCX_WINDOW | DCX_CACHE | DCX_INTERSECTRGN
+            if wp == 1 do flags = DCX_WINDOW | DCX_CACHE    
+            hdc : HDC = GetDCEx(hw, hrgn, flags)
+            defer ReleaseDC(hw, hdc)    
+            if hdc != nil {        
+                hOldPen := SelectObject(hdc, HGDIOBJ(this._borderPen))        
+                Polyline(hdc, &this._borderPts[0], 4)
+            }
+            return 0
+
+
+        case WM_NCDESTROY: 
+            RemoveWindowSubclass(hw, buddy_wnd_proc, sc_id)
 
         case CM_EDIT_COLOR:
-            if nump.foreColor != def_fore_clr || nump.backColor != def_back_clr {
+            if this.foreColor != def_fore_clr || this.backColor != def_back_clr {
                 dc_handle := dir_cast(wp, HDC)
                 api.SetBkMode(dc_handle, api.BKMODE.TRANSPARENT)
-                if nump.foreColor != 0x000000 do SetTextColor(dc_handle, get_color_ref(nump.foreColor))
-                if nump._bkBrush == nil do nump._bkBrush = CreateSolidBrush(get_color_ref(nump.backColor))
-                return toLRES(nump._bkBrush)
+                if this.foreColor != 0x000000 {
+                    SetTextColor(dc_handle, get_color_ref(this.foreColor))
+                }
+                if this._bkBrush == nil {
+                    this._bkBrush = CreateSolidBrush(get_color_ref(this.backColor))
+                }
+                return toLRES(this._bkBrush)
             }
 
-        case EM_SETSEL: return 1
+        case EM_SETSEL: 
+            return 1
 
         case WM_KEYDOWN:
             kea := new_key_event_args(wp)
-            if nump.onKeyDown != nil {
-                nump.onKeyDown(nump, &kea)
+            if this.onKeyDown != nil {
+                this.onKeyDown(this, &kea)
             }
 
         case CM_CTLCOMMAND:
             ncode := HIWORD(wp)
             if ncode == EN_UPDATE {
-                if nump.hideCaret do HideCaret(hw)
+                if this.hideCaret do HideCaret(hw)
             }
 
         case WM_KEYUP:
             kea := new_key_event_args(wp)
-            if nump.onKeyUp != nil {
-                nump.onKeyUp(nump, &kea)
+            if this.onKeyUp != nil {
+                this.onKeyUp(this, &kea)
             }
             SendMessage(hw, CM_TBTXTCHANGED, 0, 0)
             return 0
 
         case WM_CHAR:
-            if nump.onKeyPress != nil {
+            if this.onKeyPress != nil {
                 kea := new_key_event_args(wp)
-                nump.onKeyPress(nump, &kea)
+                this.onKeyPress(this, &kea)
                 return 0
             }
 
         case CM_TBTXTCHANGED:
-             if nump.onValueChanged != nil {
+             if this.onValueChanged != nil {
                 ea:= new_event_args()
-                nump.onValueChanged(nump, &ea)
-            }
-
-        case CM_BUDDY_RESIZE: 
-            resize_buddy(nump)
-            SetRect(&nump._myrc, i32(nump.xpos), i32(nump.ypos), 
-                    i32(nump.xpos + nump.width), i32(nump.ypos + nump.height))
+                this.onValueChanged(this, &ea)
+            }        
 
         case : return DefSubclassProc(hw, msg, wp, lp)
     }

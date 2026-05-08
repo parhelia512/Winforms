@@ -61,14 +61,13 @@
              
         
 ===============================================================================*/
-
+#+feature using-stmt
 package winforms
 import "base:runtime"
 import api "core:sys/windows"
 //import "core:fmt"
 
 IccListViewClass:: 0x1
-wcnListView := L("SysListView32")
 lvcount: int = 0
 
 // Default style for list view. We can change it later with listview_set_style function.
@@ -116,7 +115,7 @@ ListView:: struct
 	_bgcDraw: bool,
 
 	_divPen: HPEN,
-	_lvcList: [dynamic]LVCOLUMN,
+	// _lvcList: [dynamic]LVCOLUMN,
 
 	// Events
 	onSelectionChanged: ListViewSelChangeEventHandler,
@@ -124,6 +123,45 @@ ListView:: struct
 	onItemClick: ListViewItemEventHandler,
 	onItemDoubleClick: ListViewItemEventHandler,
 	onItemActivate: EventHandler,
+}
+
+
+ListViewColumn:: struct
+{
+	text: string,
+	width: int,
+	pLvc: ^LVCOLUMN,
+	index: int,
+	imageIndex: int,
+	hasImage, imageOnRight: bool,
+	alignment: ColumnAlignment,
+	headerAlign: HeaderAlignment,
+	_hdrTxtFlag: UINT,// For header text alignment
+	_wideText: ^u16,
+
+}
+
+ListViewItem:: struct
+{
+	index: i32,
+	text: string,
+	backColor: Color,
+	foreColor: Color,
+	font: Font,
+	imageIndex: int,
+	checked: b32,
+	subItems: [dynamic]string,
+	_bgdraw: b32,
+	_fgdraw: b32,
+
+}
+
+ListViewSubItem:: struct
+{
+	text: string,
+	backColor: uint,
+	foreColor: uint,
+	font: Font,
 }
 
 // Create a new ListView struct
@@ -169,66 +207,19 @@ new_listviewcolumn_array:: proc(name_and_width: ..any) -> [dynamic]^ListViewColu
 listview_add_column:: proc{lv_addCol1, lv_addCol2, lv_addCol3}
 
 // Add an item and sub items(if any) to list view.
-listview_add_row:: proc{lv_addrow1, lv_addrow2}
+listview_add_row:: proc{lv_addrow1}
 
 // Add an item to list view
-listview_add_item:: proc(lv: ^ListView, lvi: ^ListViewItem)
-{
-	item: LVITEM
-	using item
-		mask = LVIF_TEXT | LVIF_PARAM | LVIF_STATE
-		if lvi.imageIndex > -1 do mask |= LVIF_IMAGE
-		state = 0
-		stateMask = 0
-		iItem = lv._index
-		iSubItem = 0
-		lvi.index = int(lv._index)
-		iImage = cast(i32) lvi.imageIndex
-		pszText = to_wstring(lvi.text)
-		cchTextMax = i32(len(lvi.text))
-		lParam = dir_cast(lvi, LPARAM)
-	SendMessage(lv.handle, LVM_INSERTITEMW, 0, dir_cast(&item, LPARAM))
-	append(&lv.items, lvi)
-	lv._index += 1
-	// free_all(context.temp_allocator)
-}
+listview_add_item:: proc{lv_additem1, lv_additem2}
+
+listview_add_items :: proc{lv_additems1, lv_additems2}
+
 
 // Add a sub item to list view
-listview_add_subitem:: proc(lv: ^ListView, item_indx: int, sitem: any, sub_indx: int)
-{
-	lvi: LVITEM
-	lvi.iSubItem = i32(sub_indx)
-	lvi.pszText = to_wstring(to_str(sitem))
-	iIndx:= i32(item_indx)
-	SendMessage(lv.handle, LVM_SETITEMTEXT, WPARAM(iIndx), dir_cast(&lvi, LPARAM) )
-	// free_all(context.temp_allocator)
-}
+listview_add_subitem:: proc{lv_add_subitem1, lv_add_subitem2, lv_add_subitem3}
 
-// Add a list of sub items to an item in list view
-listview_add_subitems:: proc(lv: ^ListView, item_indx: int, items: ..any)
-{
-	if lv.viewStyle != ListViewStyle.Report do return
-	sItems: [dynamic]string
-	defer delete(sItems)
-	for j in items {
-		if value, is_str:= j.(string) ; is_str { // Magic -- type assert
-			append(&sItems, value)
-		} else {
-			append(&sItems, to_str(j))
-		}
-	}
+listview_add_subitems:: proc{lv_add_subitems1, lv_add_subitems2, lv_add_subitems3}
 
-	sub_indx: i32 = 1
-	for txt in sItems {
-		lvi: LVITEM
-		lvi.iSubItem = sub_indx
-		lvi.pszText = to_wstring(txt)
-		iIndx:= i32(item_indx)
-		SendMessage(lv.handle, LVM_SETITEMTEXT, WPARAM(iIndx), dir_cast(&lvi, LPARAM) )
-		sub_indx += 1
-		// free_all(context.temp_allocator)
-	}
-}
 
 // Set the column order of list view.
 // Example - listview_set_column_order(lv, 2, 1, 0)
@@ -292,10 +283,10 @@ lv_del_item1:: proc (lv: ^ListView, item: ^ListViewItem)
 	}
 }
 
-lv_del_item2:: proc (lv: ^ListView, item_index: int)
+lv_del_item2:: proc (lv: ^ListView, item_index: i32)
 {
 	if lv._isCreated {
-		SendMessage(lv.handle, LVM_DELETEITEM, WPARAM(i32(item_index)), 0)
+		SendMessage(lv.handle, LVM_DELETEITEM, WPARAM(item_index), 0)
 		indx:= -1
 		for item in lv.items {
 			indx += 1
@@ -338,40 +329,122 @@ listview_get_row:: proc (lv: ^ListView) -> []string
 
 //=====================================Private Functions======================
 
-ListViewColumn:: struct
-{
-	text: string,
-	width: int,
-	pLvc: ^LVCOLUMN,
-	index: int,
-	imageIndex: int,
-	hasImage, imageOnRight: bool,
-	alignment: ColumnAlignment,
-	headerAlign: HeaderAlignment,
-	_hdrTxtFlag: UINT,// For header text alignment
-	_wideText: ^u16,
 
+
+@private lv_additem1 :: proc(this: ^ListView, lvi: ^ListViewItem)
+{
+	append(&this.items, lvi)
+	if this.handle != nil do lv_add_item_internal(this, lvi)
 }
 
-ListViewItem:: struct
+@private lv_additem2 :: proc(this: ^ListView, itemText: any)
 {
-	index: int,
-	text: string,
-	backColor: Color,
-	foreColor: Color,
-	font: Font,
-	imageIndex: int,
-	checked: b32,
-	_bgdraw: b32,
-	_fgdraw: b32,
+	sitem := to_str(itemText)
+	lvi := new_listviewitem(sitem)
+	append(&this.items, lvi)
+	if this.handle != nil do lv_add_item_internal(this, lvi)	
 }
 
-ListViewSubItem:: struct
+@private lv_additems1 :: proc(this: ^ListView, itemTexts: ..any)
 {
-	text: string,
-	backColor: uint,
-	foreColor: uint,
-	font: Font,
+	if len(itemTexts) > 0 {
+		for sitem in itemTexts {
+			lvi := new_listviewitem(to_str(sitem))
+			append(&this.items, lvi)
+			if this.handle != nil do lv_add_item_internal(this, lvi)
+		} 
+	}	
+}
+
+@private lv_additems2 :: proc(this: ^ListView, pitems: ..^ListViewItem)
+{
+	if len(pitems) > 0 {
+		for item in pitems {
+			append(&this.items, item)
+			if this.handle != nil do lv_add_item_internal(this, item)	
+		} 
+	}	
+}
+
+@private lv_add_subitem1 :: proc(this: ^ListView, item_indx: int, subitem: any, sub_indx: i32)
+{
+	if item_indx < 0 || item_indx > len(this.items) do return
+	pitem := this.items[item_indx]
+	sitem := to_str(subitem)
+	append(&pitem.subItems, sitem)
+	if this.handle != nil do lv_add_subitem_internal(this, pitem, sitem, sub_indx)
+}
+
+@private lv_add_subitem2 :: proc(this: ^ListView, pitem: ^ListViewItem, subitem: any, sub_indx: i32)
+{
+	sitem := to_str(subitem)
+	append(&pitem.subItems, sitem)
+	if this.handle != nil do lv_add_subitem_internal(this, pitem, sitem, sub_indx)
+}
+
+@private lv_add_subitem3 :: proc(this: ^ListView, itemText: string, subitem: any, sub_indx: i32)
+{
+	if len(this.items) > 0 {
+		for &item in this.items {
+			if item.text == itemText {
+				sitem := to_str(subitem)
+				append(&item.subItems, sitem)
+				if this.handle != nil do lv_add_subitem_internal(this, item, sitem, sub_indx)
+				break
+			}
+		}
+	}
+}
+
+// Add a list of sub items to an item in list view
+@private lv_add_subitems1 :: proc(this: ^ListView, item_indx: int, subitems: ..any)
+{
+	if this.viewStyle != ListViewStyle.Report do return
+	if item_indx < 0 || item_indx > len(this.items) do return
+	pitem := this.items[item_indx]
+	for sitem in subitems {append(&pitem.subItems, to_str(sitem))}
+	if this.handle != nil {
+		sub_indx: i32 = 1
+		for subitem in pitem.subItems {
+			lv_add_subitem_internal(this, pitem, subitem, sub_indx)
+			sub_indx += 1
+		}
+	}	
+}
+
+@private lv_add_subitems2 :: proc(this: ^ListView, pitem: ^ListViewItem, subitems: ..any)
+{
+	for sitem in subitems {append(&pitem.subItems, to_str(sitem))}
+	if this.handle != nil {
+		sub_indx: i32 = 1
+		for subitem in pitem.subItems {
+			lv_add_subitem_internal(this, pitem, subitem, sub_indx)
+			sub_indx += 1
+		}
+	}	
+}
+
+@private lv_add_subitems3 :: proc(this: ^ListView, itemText: string, subitems: ..any)
+{
+	pitem : ^ListViewItem 
+	if len(this.items) > 0 {
+		for item in this.items {
+			if item.text == itemText {
+				pitem = item
+				break
+			}
+		}
+	}
+	if pitem != nil {
+		for sitem in subitems {append(&pitem.subItems, to_str(sitem))}
+		if this.handle != nil {
+			sub_indx: i32 = 1
+			for subitem in pitem.subItems {
+				lv_add_subitem_internal(this, pitem, subitem, sub_indx)
+				sub_indx += 1
+			}
+		}	
+	}	
 }
 
 //ListViewStyle:: enum {Normal, Report, }
@@ -381,7 +454,7 @@ ListViewSubItem:: struct
 											↓ ListView constructor ↓
 *---------------------------------------------------------------------------------------------------*/
 
-@private lv_constructor:: proc(f: ^Form, x, y, w, h: int) -> ^ListView
+@private lv_constructor:: proc(f: ^Control, x, y, w, h: i32) -> ^ListView
 {
 	if lvcount == 0 {
         app.iccx.dwIcc = IccListViewClass
@@ -389,8 +462,9 @@ ListViewSubItem:: struct
     }
 
 	this:= new(ListView)
-	init_control(this, f, x, y, w, h, .List_View, COMM_CTRL_STYLES | LV_STYLE, 0, wcnListView, NO_TXT, FONTABLE)
-	lvcount += 1
+	this.kind = .List_View
+	control_base_init(this, f, x, y, w, h, &_calCounter)
+	this._createHandleProc = lv_create_handle
 	this.viewStyle = .Report
 	this.showGridLines = true
 	this._hasFont = true
@@ -399,39 +473,35 @@ ListViewSubItem:: struct
 	this.headerClickable = true
 	this.headerBackColor = 0xb3cccc
 	this.headerForeColor = 0x000000
-	this.backColor = app.clrWhite
-	this.foreColor = app.clrBlack
 	this._hdrIndex = -1
 	this.headerHeight = 25
-	this._fp_beforeCreation = cast(CreateDelegate) lv_before_creation
-	this._fp_afterCreation = cast(CreateDelegate) lv_after_creation
 	return this
 }
 
-@private lv_constructor1:: proc(parent: ^Form) -> ^ListView
+@private lv_constructor1:: proc(parent: ^Control) -> ^ListView
 {
-	lv:= lv_constructor(parent, 10, 10, 200, 180)
-	if parent.createChilds do create_control(lv)
-	return lv
+	this := lv_constructor(parent, 10, 10, 200, 180)
+	if this._ownerForm.createChilds do create_control(this)
+	return this
 }
 
-@private lv_constructor2:: proc(parent: ^Form, x, y: int) -> ^ListView {
-	lv:= lv_constructor(parent, x, y, 200, 180)
-	if parent.createChilds do create_control(lv)
-	return lv
+@private lv_constructor2:: proc(parent: ^Control, x, y: i32) -> ^ListView {
+	this:= lv_constructor(parent, x, y, 200, 180)
+	if this._ownerForm.createChilds do create_control(this)
+	return this
 }
 
-@private lv_constructor3:: proc(parent: ^Form, x, y, w, h: int) -> ^ListView
+@private lv_constructor3:: proc(parent: ^Control, x, y, w, h: i32) -> ^ListView
 {
-	lv:= lv_constructor(parent, x, y, w, h)
-	if parent.createChilds do create_control(lv)
-	return lv
+	this:= lv_constructor(parent, x, y, w, h)
+	if this._ownerForm.createChilds do create_control(this)
+	return this
 }
 
-@private lv_constructor4:: proc(parent: ^Form, x, y, w, h: int, colnames: ..string) -> ^ListView
+@private lv_constructor4:: proc(parent: ^Control, x, y, w, h: i32, colnames: ..string) -> ^ListView
 {
 	this := lv_constructor(parent, x, y, w, h)
-	if parent.createChilds do create_control(this)
+	if this._ownerForm.createChilds do create_control(this)
 	for col in colnames {
 		pCol:= new_listview_column(col, set_coloumn_autosize(this, col))
 		listview_add_column(this, pCol)
@@ -439,10 +509,10 @@ ListViewSubItem:: struct
 	return this
 }
 
-@private lv_constructor5:: proc(parent: ^Form, x, y, w, h: int, colnames: []string, widths: []int) -> ^ListView
+@private lv_constructor5:: proc(parent: ^Control, x, y, w, h: i32, colnames: []string, widths: []int) -> ^ListView
 {
 	this:= lv_constructor(parent, x, y, w, h)
-	if parent.createChilds do create_control(this)
+	if this._ownerForm.createChilds do create_control(this)
 	if len(colnames) == len(widths)	{
 		for col, width in colnames {
 			pCol:= new_listview_column(col, widths[width])
@@ -453,10 +523,10 @@ ListViewSubItem:: struct
 	return this
 }
 
-@private lv_constructor6:: proc(parent: ^Form, x, y, w, h: int, coldata: ..any) -> ^ListView
+@private lv_constructor6:: proc(parent: ^Control, x, y, w, h: i32, coldata: ..any) -> ^ListView
 {
 	this:= lv_constructor(parent, x, y, w, h)
-	if parent.createChilds do create_control(this)
+	if this._ownerForm.createChilds do create_control(this)
 	colnames: [dynamic]string
 	colwidths: [dynamic]int
 	defer {
@@ -477,13 +547,56 @@ ListViewSubItem:: struct
 	return this
 }
 
-@private lv_constructor7:: proc(parent: ^Form, x, y, w, h: int, cols: []^ListViewColumn) -> ^ListView
+@private lv_constructor7:: proc(parent: ^Control, x, y, w, h: i32, cols: []^ListViewColumn) -> ^ListView
 {
 	this:= lv_constructor(parent, x, y, w, h)
-	if parent.createChilds do create_control(this)
+	if this._ownerForm.createChilds do create_control(this)
 	for pCol in cols { listview_add_column(this, pCol) }
 	return this
 }
+
+@private lv_create_handle :: proc(ctl: ^Control)
+{
+	this := cast(^ListView)ctl
+	lv_adjust_styles(this)
+	this._hdrBkBrush = create_hbrush(this.headerBackColor)
+	this._hdrHotBrush = CreateSolidBrush(change_color(this.headerBackColor, 1.12))
+	this._bgcRef = get_color_ref(this.backColor)
+	this._fgcRef = get_color_ref(this.foreColor)
+	this._divPen = CreatePen(PS_SOLID, 1, 0x00FFFFFF)	
+	create_control(ctl, this.width, this.height)
+
+	set_subclass(this, lv_wnd_proc)
+    lv_set_extended_styles(this)
+	if this.viewStyle == .Tile {
+		SendMessage(this.handle, LVM_SETVIEW, WPARAM(0x0004), 0)
+	}
+	if this._imgList.handle != nil {	// We need to set the image list to list view.
+		SendMessage(this.handle,
+					LVM_SETIMAGELIST,
+					cast(WPARAM) this._imgList.imageType,
+					dir_cast(this._imgList.handle, LPARAM))
+	}
+
+	// Let's collect the header handle and subclass it.
+	this._hdrHwnd = HWND(cast(UINT_PTR) SendMessage(this.handle, LVM_GETHEADER, 0, 0))
+	api.SetWindowSubclass(this._hdrHwnd, 
+						  SUBCLASSPROC(hdr_wnd_proc), 
+						  UINT_PTR(globalSubClassID), 
+						  to_dwptr(this))
+	globalSubClassID += 1	
+
+	// Insert columns if any
+	if len(this.columns) > 0 {
+		for col in this.columns {lv_addcolumn_internal(this, col)}		
+	}
+
+	// Insert items if any
+	if len(this.items) > 0 {
+		for item in this.items {lv_add_item_internal(this, item)}		
+	}
+}
+
 
 /*------------------------------------------------------------------------------------------------------------
 										↓ ListViewColumn constructor ↓
@@ -577,54 +690,65 @@ ListViewSubItem:: struct
 	return lvi
 }
 
+@private lvitem_dtor :: proc(this: ^ListViewItem) 
+{
+	if len(this.subItems) > 0 do delete(this.subItems)
+	free(this)
+}
+
 
 /*-------------------------------------------------------------------------------------------------------
 *									↓ ListView Add Coulmn functions ↓
 *--------------------------------------------------------------------------------------------------------*/
 
 
-@private lv_addCol1:: proc(lv: ^ListView, txt: string, width: int,
+@private lv_addCol1:: proc(this: ^ListView, txt: string, width: int,
 								img: bool = false, imgOnRight: bool = false)
 {
+	// If hwnd is created, we add the column to lv, otherwise,...
+	// We will do the deferred execution.
 	lvc:= new(ListViewColumn)
 	lvc.text = txt
 	lvc.width = width
 	lvc.hasImage = img
 	lvc.imageOnRight =imgOnRight
 	lvc.imageIndex = -1
-	lvc.index = int(lv._colIndex)
-	lv._colIndex += 1
+	lvc.index = int(this._colIndex)
+	this._colIndex += 1
 	set_hdr_text_flag(lvc)
 	lvc._wideText = to_wchar_ptr(txt, context.allocator)
-	lv_add_column(lv, lvc)
+	append(&this.columns, lvc) 
+	if this.handle != nil do lv_addcolumn_internal(this, lvc)
 }
 
-@private lv_addCol2:: proc(lv: ^ListView, lvc: ^ListViewColumn)
+@private lv_addCol2:: proc(this: ^ListView, lvc: ^ListViewColumn)
 {
-	lvc.index = int(lv._colIndex)
+	lvc.index = int(this._colIndex)
 	if lvc.headerAlign != .Center do set_hdr_text_flag(lvc)
-	lv._colIndex += 1
-	lv_add_column(lv, lvc)
+	this._colIndex += 1
+	append(&this.columns, lvc) // Keeping the object for deferred execution.
+	if this.handle != nil do lv_addcolumn_internal(this, lvc)
 }
 
-@private lv_addCol3:: proc(lv: ^ListView, txt: string, width: int, align: ColumnAlignment)
+@private lv_addCol3:: proc(this: ^ListView, txt: string, width: int, align: ColumnAlignment)
 {
 	lvc:= new(ListViewColumn)
 	lvc.text = txt
 	lvc.width = width
 	lvc.hasImage = false
 	lvc.imageOnRight = false
-	lvc.index = int(lv._colIndex)
+	lvc.index = int(this._colIndex)
 	lvc.imageIndex = -1
 	lvc.alignment = align
-	lv._colIndex += 1
+	this._colIndex += 1
 	lvc._hdrTxtFlag = DEF_HDR_TXT_FLAG
 	lvc._wideText = to_wchar_ptr(txt, context.allocator)
-	lv_add_column(lv, lvc)
+	append(&this.columns, lvc) // Keeping the object for deferred execution.
+	if this.handle != nil do lv_addcolumn_internal(this, lvc)
 }
 
 // Here is the actual add column work happening.
-@private lv_add_column:: proc(lv: ^ListView, lvCol: ^ListViewColumn)
+@private lv_addcolumn_internal:: proc(lv: ^ListView, lvCol: ^ListViewColumn)
 {
 	if lv.handle == nil {
 		print("Cannot add column in list view, ListView handle is nil.")
@@ -644,48 +768,64 @@ ListViewSubItem:: struct
 
 	if lvCol.imageOnRight do lvc.fmt |= LVCFMT_BITMAP_ON_RIGHT
 	SendMessage(lv.handle, LVM_INSERTCOLUMNW, WPARAM(lvCol.index), dir_cast(&lvc, LPARAM))	
-	append(&lv.columns, lvCol)
+	// append(&lv.columns, lvCol)
 }
 
-@private lv_addrow1:: proc(lv: ^ListView, items: ..any, )
+@private lv_add_item_internal :: proc(this: ^ListView, pitem: ^ListViewItem)
 {
-	if lv.viewStyle != ListViewStyle.Report do return
+	lvitem: LVITEM	
+	lvitem.mask = LVIF_TEXT | LVIF_PARAM | LVIF_STATE
+	if pitem.imageIndex > -1 do lvitem.mask |= LVIF_IMAGE
+	lvitem.state = 0
+	lvitem.stateMask = 0
+	lvitem.iItem = this._index
+	lvitem.iSubItem = 0	
+	lvitem.iImage = cast(i32) pitem.imageIndex
+	lvitem.pszText = to_wstring(pitem.text)
+	lvitem.cchTextMax = i32(len(pitem.text))
+	lvitem.lParam = dir_cast(pitem, LPARAM)
+	pitem.index = this._index
+
+	SendMessage(this.handle, LVM_INSERTITEMW, 0, dir_cast(&lvitem, LPARAM))
+
+	this._index += 1
+	if len(pitem.subItems) > 0 {
+		for sitem, index in pitem.subItems{
+			lvi: LVITEM
+			lvi.iSubItem = i32(index + 1)
+			lvi.pszText = to_wstring(sitem)
+			iIndx:= i32(pitem.index)
+			x := SendMessage(this.handle, LVM_SETITEMTEXT, WPARAM(iIndx), dir_cast(&lvi, LPARAM))
+			if x == 0 do ptf("Can't add sub item '%s', Error: %d", sitem, GetLastError())
+		}
+	}	
+}
+
+@private lv_addrow1:: proc(this: ^ListView, items: ..any, )
+{
+	if this.viewStyle != ListViewStyle.Report do return
 	iLen:= len(items)
 	if iLen > 0 {
-		sItems: [dynamic]string
-		defer delete(sItems)
-		for j in items {
-			if value, is_str:= j.(string); is_str { // Magic -- type assert
-				append(&sItems, value)
-			} else {
-				append(&sItems, to_str(j))
-			}
+		fitem := to_str(items[0])
+		lvItem:= listview_item_constructor1(fitem)
+		if iLen > 1 do reserve(&lvItem.subItems, iLen - 1)
+		for i :=1; i < iLen; i += 1 {
+			append(&lvItem.subItems, to_str(items[i]))			
 		}
-		lvItem:= listview_item_constructor1(sItems[0])
-		listview_add_item(lv, lvItem)
-
-		for i:= 1; i < iLen; i += 1 {
-			lvi: LVITEM
-			lvi.iSubItem = i32(i)
-			lvi.pszText = to_wstring(to_str(sItems[i]))
-			iIndx:= i32(lvItem.index)
-			SendMessage(lv.handle, LVM_SETITEMTEXT, WPARAM(iIndx), dir_cast(&lvi, LPARAM) )
-			// free_all(context.temp_allocator)
-		}
+		append(&this.items, lvItem)
+		if this.handle != nil do lv_add_item_internal(this, lvItem)		
 	}
 }
 
-@private lv_addrow2:: proc(lv: ^ListView, item_txt: any)
+@private lv_add_subitem_internal :: proc(this: ^ListView, pitem: ^ListViewItem, subitem: string, sub_indx: i32)
 {
-	sItem: string
-	if value, is_str:= item_txt.(string) ; is_str { // Magic -- type assert
-		sItem = value
-	} else {
-		sItem = to_str(item_txt)
-	}
-	lvItem:= listview_item_constructor1(sItem)
-	listview_add_item(lv, lvItem)
+	lvi: LVITEM
+	lvi.iSubItem = sub_indx
+	lvi.pszText = to_wstring(subitem)
+	iIndx:= pitem.index
+	SendMessage(this.handle, LVM_SETITEMTEXT, WPARAM(iIndx), dir_cast(&lvi, LPARAM) )
 }
+
 
 @private lv_get_header:: proc(lvh: HWND) -> HWND {return cast(HWND) cast(UINT_PTR) SendMessage(lvh, LVM_GETHEADER, 0, 0)}
 
@@ -800,50 +940,6 @@ ListViewSubItem:: struct
     return int(ss.cx + 10)
 }
 
-// This will executed right before a list view is created
-@private lv_before_creation:: proc(lv: ^ListView) 
-{
-	lv_adjust_styles(lv)
-	lv._hdrBkBrush = create_hbrush(lv.headerBackColor)
-	lv._hdrHotBrush = CreateSolidBrush(change_color(lv.headerBackColor, 1.12))
-	lv._bgcRef = get_color_ref(lv.backColor)
-	lv._fgcRef = get_color_ref(lv.foreColor)
-	lv._divPen = CreatePen(PS_SOLID, 1, 0x00FFFFFF)
-}
-
-// This will executed right after a list view is created
-@private lv_after_creation:: proc(lv: ^ListView) 
-{
-	// print("alloc data ", (transmute(^int) alloc.data)^)
-	set_subclass(lv, lv_wnd_proc)
-    lv_set_extended_styles(lv)
-	if lv.viewStyle == .Tile do SendMessage(lv.handle, LVM_SETVIEW, WPARAM(0x0004), 0)
-	if lv._imgList.handle != nil {	// We need to set the image list to list view.
-		SendMessage(lv.handle,
-					LVM_SETIMAGELIST,
-					cast(WPARAM) lv._imgList.imageType,
-					dir_cast(lv._imgList.handle, LPARAM))
-	}
-
-	if len(lv._lvcList) > 0 {
-		res: i32
-		for &col in lv._lvcList {
-			res = i32(SendMessage(	lv.handle, 
-									LVM_INSERTCOLUMNW, 
-									WPARAM(res), 
-									dir_cast(&col, LPARAM)))
-			res += 1
-		}
-		delete(lv._lvcList) // We don't want this list anymore
-	}
-
-	// Let's collect the header handle and subclass it.
-	lv._hdrHwnd = HWND(cast(UINT_PTR) SendMessage(lv.handle, LVM_GETHEADER, 0, 0))
-	api.SetWindowSubclass(lv._hdrHwnd, SUBCLASSPROC(hdr_wnd_proc), UINT_PTR(globalSubClassID), to_dwptr(lv))
-	globalSubClassID += 1
-
-	// if lv.backColor != 0xFFFFFF do SendMessage(lv.handle, LVM_SETBKCOLOR, 0, LPARAM(lv._bgcRef))
-}
 
 @private listview_property_setter:: proc(this: ^ListView, prop: ListViewProps, value: $T)
 {
@@ -866,50 +962,49 @@ ListViewSubItem:: struct
 	}
 }
 
-@private lv_finalize:: proc(this: ^ListView, scid: UINT_PTR) 
+@private lv_finalize:: proc(this: ^ListView) 
 {
 	delete_gdi_object(this._divPen)	
 	if this._imgList.handle != nil do ImageList_Destroy(this._imgList.handle)
 	if this._hdrBkBrush != nil do delete_gdi_object(this._hdrBkBrush)
 	if this._hdrHotBrush != nil do delete_gdi_object(this._hdrHotBrush)
-	if this._cmenuUsed do contextmenu_dtor(this.contextMenu)
-    RemoveWindowSubclass(this.handle, lv_wnd_proc, scid)
     for pcol in this.columns {lv_col_finalize(pcol)}
-    for pitem in this.items	 {free(pitem)}
+    // for pitem in this.items	 {free(pitem)}
+	if len(this.items) > 0 {
+		for item in this.items {lvitem_dtor(item)}
+	}
     delete(this.items)
 	delete(this.columns)
 	delete(this.selectedItems)
-	// font_destroy(&this.font, 12)
+	control_base_dtor(this)
     free(this)
+
 }
 
 @private lv_wnd_proc:: proc "stdcall" (hw: HWND, msg: u32, wp: WPARAM, lp: LPARAM,
 												sc_id: UINT_PTR, ref_data: DWORD_PTR) -> LRESULT 
 {
 	context = global_context  
-	// context = runtime.default_context()
-	// print("user_index ", (cast(^int) context.user_ptr)^)
+	this := control_cast(ListView, ref_data)
+    res := ctrl_common_msg_handler(this, hw, msg, wp, lp) 
+    #partial switch res {
+        case .Call_Def_Proc: return DefSubclassProc(hw, msg, wp, lp)
+        case .Immediate_Return: return 1
+    }
 	
-	//display_msg(msg)
+	// display_msg(msg)
 	switch msg {
-	case WM_DESTROY: 
-		lv:= control_cast(ListView, ref_data)
-		lv_finalize(lv, sc_id)
+	case WM_NCDESTROY: 
+		RemoveWindowSubclass(this.handle, lv_wnd_proc, sc_id)
+		lv_finalize(this)
 
 	case WM_SETFOCUS: 
-		lv:= control_cast(ListView, ref_data)
-		ctrl_setfocus_handler(lv)
+		ctrl_setfocus_handler(this)
 
 	case WM_KILLFOCUS: 
-		lv:= control_cast(ListView, ref_data)
-		ctrl_killfocus_handler(lv)
-
-	case WM_CONTEXTMENU:
-		lv:= control_cast(ListView, ref_data)
-		if lv.contextMenu != nil do contextmenu_show(lv.contextMenu, lp)
+		ctrl_killfocus_handler(this)
 
 	case CM_NOTIFY: // Re-routed from parent
-		lv:= control_cast(ListView, ref_data)
 		nmh:= dir_cast(lp, ^NMHDR)
 		switch nmh.code {
 			case NM_CUSTOMDRAW:
@@ -918,7 +1013,7 @@ ListViewSubItem:: struct
 				case CDDS_PREPAINT:
 					return CDRF_NOTIFYITEMDRAW
 				case CDDS_ITEMPREPAINT:
-					pitem := lv.items[lvcd.nmcd.dwItemSpec]
+					pitem := this.items[lvcd.nmcd.dwItemSpec]
 					if pitem._bgdraw do lvcd.clrTextBk = pitem.backColor.ref
 					if pitem._fgdraw do lvcd.clrText = pitem.foreColor.ref
 					// print("iSubItem ", lvcd.nmcd.dwItemSpec)
@@ -927,18 +1022,18 @@ ListViewSubItem:: struct
 				return CDRF_DODEFAULT
 
 			case NM_CLICK:
-				if lv.onItemClick != nil && len(lv.items) > 0 { 
+				if this.onItemClick != nil && len(this.items) > 0 { 
                     nmia := dir_cast(lp, ^NMITEMACTIVATE)
-                    sitem := lv.items[nmia.iItem]
+                    sitem := this.items[nmia.iItem]
 					lviea := LVItemEventArgs{item = sitem}
-                    lv.onItemClick(lv, &lviea)
+                    this.onItemClick(this, &lviea)
 				}
 			case NM_DBLCLK:
-				if lv.onItemDoubleClick != nil && len(lv.items) > 0 { 
+				if this.onItemDoubleClick != nil && len(this.items) > 0 { 
 					nmia := dir_cast(lp, ^NMITEMACTIVATE)
-					sitem := lv.items[nmia.iItem]
+					sitem := this.items[nmia.iItem]
 					lviea := LVItemEventArgs{item = sitem}
-					lv.onItemDoubleClick(lv, &lviea)
+					this.onItemDoubleClick(this, &lviea)
 				}
 
 			case LVN_ITEMCHANGED:
@@ -947,28 +1042,28 @@ ListViewSubItem:: struct
 					nowSelected : b32 = (nmlv.uNewState & LVIS_SELECTED) != 0
                     wasSelected : b32 = (nmlv.uOldState & LVIS_SELECTED) != 0
                     if (nowSelected && !wasSelected) {
-						sitem := lv.items[nmlv.iItem]
-						if lv.multiSelection {
-							append(&lv.selectedItems, sitem)
+						sitem := this.items[nmlv.iItem]
+						if this.multiSelection {
+							append(&this.selectedItems, sitem)
 						} else {
-							lv.selectedItem = sitem
+							this.selectedItem = sitem
 						}   
-						if lv.onSelectionChanged != nil {
+						if this.onSelectionChanged != nil {
 							lsea := LVSelChangedEventArgs{item = sitem, 
 														   index = nmlv.iItem, 
 														   isSelected = nowSelected}
-							lv.onSelectionChanged(lv, &lsea)
+							this.onSelectionChanged(this, &lsea)
 						}
 
                     } else if !nowSelected && wasSelected {
-						sitem := lv.items[nmlv.iItem]
-                        if lv.multiSelection {
-                            ordered_remove(&lv.selectedItems, sitem.index)
-							if lv.onSelectionChanged != nil {
+						sitem := this.items[nmlv.iItem]
+                        if this.multiSelection {
+                            ordered_remove(&this.selectedItems, sitem.index)
+							if this.onSelectionChanged != nil {
 								lsea := LVSelChangedEventArgs{item = sitem, 
 														   index = nmlv.iItem, 
 														   isSelected = nowSelected}
-								lv.onSelectionChanged(lv, &lsea)
+								this.onSelectionChanged(this, &lsea)
 							}
 						}
 					}
@@ -978,24 +1073,23 @@ ListViewSubItem:: struct
 
 					if state_index != old_state_index { // Item checkbox changed
 						is_checked : b32 = (state_index == 2) // 2 = checked, 1 = unchecked
-						if len(lv.items) > 0{                             
-                            sitem := lv.items[nmlv.iItem]                                
+						if len(this.items) > 0{                             
+                            sitem := this.items[nmlv.iItem]                                
 							sitem.checked = is_checked  
-							if lv.onItemCheckChanged != nil {
+							if this.onItemCheckChanged != nil {
 								licea := LVItemCheckEventArgs{item = sitem, 
 															  index = nmlv.iItem, 
 															  isChecked = is_checked}
-								lv.onItemCheckChanged(lv, &licea)
+								this.onItemCheckChanged(this, &licea)
 							}
 						}
 					}
 				}
 			case LVN_ITEMACTIVATE:
-                if lv.onItemActivate != nil do lv.onItemActivate(lv, &gea)
+                if this.onItemActivate != nil do this.onItemActivate(this, &gea)
 		}
 
 	case WM_NOTIFY: // From our child
-		lv:= control_cast(ListView, ref_data)
 		// Message from header.
 		nmh:= dir_cast(lp, ^NMHDR)
 		switch nmh.code {
@@ -1006,7 +1100,7 @@ ListViewSubItem:: struct
 				return CDRF_NOTIFYITEMDRAW
 			case CDDS_ITEMPREPAINT:
 				// print("hdr item prepaint ")
-				return draw_header(lv, nmcd)
+				return draw_header(this, nmcd)
 				// return CDRF_SKIPDEFAULT
 			}
 		}
@@ -1018,44 +1112,38 @@ ListViewSubItem:: struct
 												sc_id: UINT_PTR, ref_data: DWORD_PTR) -> LRESULT 
 {
 	context = global_context //
-	// context = runtime.default_context()
+	this := control_cast(ListView, ref_data)
 	
 	// display_msg(msg)
-		switch msg {
-			case WM_DESTROY:
-				lv:= control_cast(ListView, ref_data)
-				RemoveWindowSubclass(hw, hdr_wnd_proc, UINT_PTR(sc_id) )
-				// print("Removed header subclassing result ", res)
+	switch msg {
+		case WM_NCDESTROY:
+			RemoveWindowSubclass(hw, hdr_wnd_proc, UINT_PTR(sc_id) )
 
-			case WM_MOUSEMOVE:
-				lv:= control_cast(ListView, ref_data)
-				hti: HDHITTESTINFO
-				hti.pt = get_mouse_points(lp)
-				lv._hdrIndex = i32(SendMessage(hw, HDM_HITTEST, 0, dir_cast(&hti, LPARAM)))
+		case WM_MOUSEMOVE:
+			hti: HDHITTESTINFO
+			hti.pt = get_mouse_points(lp)
+			this._hdrIndex = i32(SendMessage(hw, HDM_HITTEST, 0, dir_cast(&hti, LPARAM)))
 
-			case WM_MOUSELEAVE:
-				lv:= control_cast(ListView, ref_data)
-				lv._hdrIndex = -1
+		case WM_MOUSELEAVE:
+			this._hdrIndex = -1
 
-			case HDM_LAYOUT:
-				lv:= control_cast(ListView, ref_data)
-				// ptf("hd layout %d\n", size_of(HD_LAYOUT))
-				phl:= dir_cast(lp, ^HD_LAYOUT)
-				res:= DefSubclassProc(hw, msg, wp, lp)
-				phl.pwpos.cy = i32(lv.headerHeight)
-				return res
+		case HDM_LAYOUT:
+			// ptf("hd layout %d\n", size_of(HD_LAYOUT))
+			phl:= dir_cast(lp, ^HD_LAYOUT)
+			res:= DefSubclassProc(hw, msg, wp, lp)
+			phl.pwpos.cy = i32(this.headerHeight)
+			return res
 
-			case WM_PAINT:
-				lv:= control_cast(ListView, ref_data)
-				DefSubclassProc(hw, msg, wp, lp)
-				hrc: RECT
-                SendMessage(hw, HDM_GETITEMRECT, WPARAM(len(lv.columns) - 1), dir_cast(&hrc, LPARAM))
-                rc: RECT = {hrc.right + 1, hrc.top, i32(lv.width), hrc.bottom}
-                hdc: HDC = GetDC(hw)
-                api.FillRect(hdc, &rc, lv._hdrBkBrush)
-                ReleaseDC(hw, hdc)
-                return 0
+		case WM_PAINT:
+			DefSubclassProc(hw, msg, wp, lp)
+			hrc: RECT
+			SendMessage(hw, HDM_GETITEMRECT, WPARAM(len(this.columns) - 1), dir_cast(&hrc, LPARAM))
+			rc: RECT = {hrc.right + 1, hrc.top, i32(this.width), hrc.bottom}
+			hdc: HDC = GetDC(hw)
+			api.FillRect(hdc, &rc, this._hdrBkBrush)
+			ReleaseDC(hw, hdc)
+			return 0
 
-		}
+	}
 	return DefSubclassProc(hw, msg, wp, lp)
 }

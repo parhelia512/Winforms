@@ -64,8 +64,8 @@ import "base:runtime"
 //import "core:fmt"
 
 g_node_id: int = 100
-wcnTreeView := L("SysTreeView32")
-tvcount: int = 0
+
+_tvcount: int = 1
 TV_STYLE : u32 = WS_BORDER | TVS_HASLINES | TVS_HASBUTTONS | TVS_LINESATROOT | TVS_DISABLEDRAGDROP
 
 TreeNodeArray:: distinct ^[dynamic]^TreeNode
@@ -121,9 +121,12 @@ TreeNode:: struct
     _dispose: NodeDisposeHandler,
     _isCreated: bool,
     _treeHwnd: HWND,
+    _insAfter: HTREEITEM,
+    _nodeOp: NodeOpMode,
     _index: int,
     _nodeID: int,
     _nodeCount: int,
+    _insPos: int
 }
 
 // Create new treeview
@@ -161,36 +164,29 @@ treeview_collapse_node:: proc(tv: ^TreeView, node: ^TreeNode)
 }
 
 // Add a new root node to tree view.
-treeview_add_node:: proc(tv: ^TreeView, node: ^TreeNode)
-{
-    tv_addnode_internal(tv, node, NodeOp.Add_Node)
-}
+treeview_add_node:: proc{tv_addnode1, tv_addnode2}
 
 // Add the given root nodes into treeview.
-treeview_add_nodes:: proc{treeview_add_nodes1, treeview_add_nodes2}
+treeview_add_nodes:: proc{tv_add_nodes1, tv_add_nodes2}
+
+treeview_add_node_with_children :: proc{tv_addnode_with_children1}
 
 // Inserts given root node to given index.
-treeview_insert_node:: proc(tv: ^TreeView, node: ^TreeNode, index: int)
-{
-    tv_addnode_internal(tv, node, NodeOp.Insert_Node, index)
-}
+treeview_insert_node:: proc{tv_insert_node1, tv_insert_node2}
+
 
 // Add a child node to given parent node.
-treeview_add_child_node:: proc(tv: ^TreeView, node: ^TreeNode, parent: ^TreeNode)
-{
-    tv_addnode_internal(tv, node, NodeOp.Add_Child, -1, parent)
-}
+treeview_add_child_node:: proc{tv_add_childnode1, tv_add_childnode2}
+
 
 // Add given child nodes to given parent node.
-treeview_add_childnodes:: proc{treeview_add_child_nodes1,
-                                treeview_add_child_nodes2,
-                                treeview_add_child_nodes3}
+treeview_add_childnodes:: proc{tv_add_child_nodes1,
+                                tv_add_child_nodes2,
+                                tv_add_child_nodes3}
 
 // Iserts a child node to given parent node at given index
-treeview_insert_child_node:: proc(tv: ^TreeView, node: ^TreeNode, parent: ^TreeNode, index: int)
-{
-    tv_addnode_internal(tv, node, NodeOp.Insert_Child, index, parent)
-}
+treeview_insert_child_node:: proc{tv_insert_childnode1, tv_insert_childnode2}
+
 
 // Delete a node from treeview
 treeview_delete_node:: proc(tv: ^TreeView, node: ^TreeNode)
@@ -239,43 +235,65 @@ treeview_create_image_list:: proc(tv: ^TreeView, nImg: int, ico_size: int = 16)
 }
 // ======================================Private Functions=======================================
 
-@private tv_ctor:: proc(f: ^Form, x, y, w, h: int) -> ^TreeView
+@private tv_ctor:: proc(f: ^Control, x, y, w, h: i32) -> ^TreeView
 {
-    if tvcount == 0 {
+    if _tvcount == 1 {
         app.iccx.dwIcc = ICC_TREEVIEW_CLASSES
         InitCommonControlsEx(&app.iccx)
     }
     this:= new(TreeView)
-    init_control(this, f, x, y, w, h, .Tree_View, COMM_CTRL_STYLES | TV_STYLE, 0, wcnTreeView, NO_TXT, FONTABLE)
-    tvcount += 1
+    this.kind = .Tree_View
+    control_base_init(this, f, x, y, w, h, &_tvcount)
+    this._createHandleProc = tv_create_handle
     this._uniqItemID = 100
-    this.backColor = app.clrWhite
-    this.foreColor = app.clrBlack
     this.lineColor = app.clrBlack
-    this._fp_beforeCreation = cast(CreateDelegate) tv_before_creation
-	this._fp_afterCreation = cast(CreateDelegate) tv_after_creation
     return this
 }
 
-@private new_tv1:: proc(parent: ^Form) -> ^TreeView
+@private new_tv1:: proc(parent: ^Control) -> ^TreeView
 {
-    tv:= tv_ctor(parent, 10, 10, 200, 250)
-    if parent.createChilds do create_control(tv)
-    return tv
+    this := tv_ctor(parent, 10, 10, 200, 250)
+    if this._ownerForm.createChilds do create_control(this)
+    return this
 }
 
-@private new_tv2:: proc(parent: ^Form, x, y: int) -> ^TreeView
+@private new_tv2:: proc(parent: ^Control, x, y: i32) -> ^TreeView
 {
-    tv:= tv_ctor(parent, x, y, 200, 250)
-    if parent.createChilds do create_control(tv)
-    return tv
+    this := tv_ctor(parent, x, y, 200, 250)
+    if this._ownerForm.createChilds do create_control(this)
+    return this
 }
 
-@private new_tv3:: proc(parent: ^Form, x, y, w, h: int) -> ^TreeView
+@private new_tv3:: proc(parent: ^Control, x, y, w, h: i32) -> ^TreeView
 {
-    tv:= tv_ctor(parent, x, y, w, h)
-    if parent.createChilds do create_control(tv)
-    return tv
+    this := tv_ctor(parent, x, y, w, h)
+    if this._ownerForm.createChilds do create_control(this)
+    return this
+}
+
+@private tv_create_handle :: proc(ctl: ^Control)
+{
+	this := cast(^TreeView)ctl
+	tv_adjust_styles(this)	
+	create_control(ctl, this.width, this.height)
+	set_subclass(this, tv_wnd_proc)
+    setfont_internal(this)
+    if this.backColor != app.clrWhite {
+        cref:= get_color_ref(this.backColor)
+        SendMessage(this.handle, TVM_SETBKCOLOR, 0, dir_cast(cref, LPARAM) )
+    }
+    if this.foreColor != app.clrBlack {
+        cref:= get_color_ref(this.foreColor)
+        SendMessage(this.handle, TVM_SETTEXTCOLOR, 0, dir_cast(cref, LPARAM) )
+    }
+    if this.lineColor != app.clrBlack  {
+        cref:= get_color_ref(this.lineColor)
+        SendMessage(this.handle, TVM_SETLINECOLOR, 0, dir_cast(cref, LPARAM) )
+    }	
+    
+    if len(this.nodes) > 0 {
+        for node in this.nodes {tv_insert_items_internal(this, node)}
+    }
 }
 
 @private treenode_ctor:: proc(txt: string, img: int = -1, simg: int = -1,
@@ -288,6 +306,7 @@ treeview_create_image_list:: proc(tv: ^TreeView, nImg: int, ico_size: int = 16)
     tn._dispose = dispose_node
     tn.foreColor = fclr
     tn.backColor = bk_clr
+    tn._insPos = -1
     return tn
 }
 
@@ -309,57 +328,213 @@ treeview_create_image_list:: proc(tv: ^TreeView, nImg: int, ico_size: int = 16)
     return treenode_ctor(txt, img_indx, sel_img_indx, txt_clr, back_clr)
 }
 
-@private treeview_add_nodes1:: proc(tv: ^TreeView, nodes: ..^TreeNode )
+@private tv_addnode1 :: proc(this: ^TreeView, node: ^TreeNode)
+{
+    node._index = this._itemCount
+    node._nodeOp = .Add_Node
+    node._insAfter = TVI_LAST
+    append(&this.nodes, node)
+    this._itemCount += 1
+    if this.handle != nil do tv_addnode_internal(this, node)
+}
+
+@private tv_addnode2 :: proc(this: ^TreeView, nodeText: any)
+{
+    node := new_treenode(to_str(nodeText))
+    node._nodeOp = .Add_Node
+    node._insAfter = TVI_LAST
+    node._index = this._itemCount
+    append(&this.nodes, node)
+    this._itemCount += 1
+    if this.handle != nil do tv_addnode_internal(this, node)
+}
+
+@private tv_addnode_with_children1 :: proc(this: ^TreeView, items: ..any)
+{
+    if len(items) == 0 do return
+    pnode := new_treenode(to_str(items[0]))
+    pnode._nodeOp = .Add_Node
+    pnode._insAfter = TVI_LAST
+    pnode._index = this._itemCount
+    this._itemCount += 1
+    if this.handle != nil do tv_addnode_internal(this, pnode)
+    append(&this.nodes, pnode)
+
+    for i := 1; i < len(items); i += 1 {
+        cnode := new_treenode(to_str(items[i]))
+        cnode._nodeOp = .Add_Child
+        cnode._index = this._itemCount
+        cnode._insAfter = TVI_LAST
+        append(&pnode.nodes, cnode)
+        this._itemCount += 1
+        pnode._nodeCount += 1
+        if this.handle != nil do tv_addnode_internal(this, cnode, pnode)
+    }    
+}
+
+@private tv_insert_node1 :: proc(this: ^TreeView, node: ^TreeNode, index: int)
+{
+    if index < 0 || index >= len(this.nodes) do return
+    node._insPos = index
+    node._index = this._itemCount
+    node._nodeOp = .Insert_Node
+    node._insAfter = TVI_FIRST if index == 0 else this.nodes[index - 1].handle
+    append(&this.nodes, node)
+    this._itemCount += 1
+    if this.handle != nil do tv_addnode_internal(this, node)
+}
+
+@private tv_insert_node2 :: proc(this: ^TreeView, nodeText: any, index: int)
+{
+    if index < 0 || index >= len(this.nodes) do return
+    node := new_treenode(to_str(nodeText))
+    node._insPos = index
+    node._index = this._itemCount
+    node._nodeOp = .Insert_Node
+    node._insAfter = TVI_FIRST if index == 0 else this.nodes[index - 1].handle
+    append(&this.nodes, node)
+    this._itemCount += 1
+    if this.handle != nil do tv_addnode_internal(this, node)
+}
+
+@private tv_add_nodes1:: proc(this: ^TreeView, nodes: ..^TreeNode )
 {
     for node in nodes {
-        tv_addnode_internal(tv, node, NodeOp.Add_Node)
+        node._index = this._itemCount
+        node._nodeOp = .Add_Node
+        node._insAfter = TVI_LAST
+        append(&this.nodes, node)
+        this._itemCount += 1
+        if this.handle != nil do tv_addnode_internal(this, node)
     }
 }
 
-@private treeview_add_nodes2:: proc(tv: ^TreeView, nodetexts: ..string )
+@private tv_add_nodes2:: proc(this: ^TreeView, nodetexts: ..any )
 {
     for txt in nodetexts {
-        node:= new_treenode(txt)
-        tv_addnode_internal(tv, node, NodeOp.Add_Node)
+        node:= new_treenode(to_str(txt))
+        node._nodeOp = .Add_Node
+        node._insAfter = TVI_LAST
+        node._index = this._itemCount
+        append(&this.nodes, node)
+        this._itemCount += 1
+        if this.handle != nil do tv_addnode_internal(this, node)
     }
 }
 
-@private treeview_add_child_nodes1:: proc(tv: ^TreeView, parent: ^TreeNode, nodes: ..^TreeNode)
+@private tv_add_childnode1 :: proc(this: ^TreeView, node: ^TreeNode, parent: ^TreeNode)
+{
+    node._index = this._itemCount
+    node._nodeOp = .Add_Node
+    node._insAfter = TVI_LAST
+    append(&this.nodes, node)
+    this._itemCount += 1
+    parent._nodeCount += 1
+    if this.handle != nil do tv_addnode_internal(this, node, parent)    
+}
+
+@private tv_add_childnode2 :: proc(this: ^TreeView, nodeText: any, parent: ^TreeNode)
+{
+    node := new_treenode(to_str(nodeText))
+    node._index = this._itemCount
+    node._nodeOp = .Add_Child
+    node._insAfter = TVI_LAST
+    append(&this.nodes, node)
+    this._itemCount += 1
+    parent._nodeCount += 1
+    if this.handle != nil do tv_addnode_internal(this, node, parent)    
+}
+
+@private tv_insert_childnode1 :: proc(this: ^TreeView, node: ^TreeNode, parent: ^TreeNode, index: int)
+{
+    if index < 0 || index >= len(parent.nodes) do return
+    node._insPos = index
+    node._index = this._itemCount
+    node._nodeOp = .Insert_Child
+    node._insAfter = TVI_FIRST if index == 0 else parent.nodes[index - 1].handle
+    append(&parent.nodes, node)
+    parent._nodeCount += 1
+    if this.handle != nil do tv_addnode_internal(this, node, parent)
+}
+
+@private tv_insert_childnode2 :: proc(this: ^TreeView, nodeText: any, parent: ^TreeNode, index: int)
+{
+    if index < 0 || index >= len(parent.nodes) do return
+    node := new_treenode(to_str(nodeText))
+    node._insPos = index
+    node._insAfter = TVI_FIRST if index == 0 else parent.nodes[index - 1].handle
+    node._index = this._itemCount
+    node._nodeOp = .Insert_Child
+    append(&parent.nodes, node)
+    parent._nodeCount += 1
+    if this.handle != nil do tv_addnode_internal(this, node, parent)
+}
+
+@private tv_add_child_nodes1:: proc(this: ^TreeView, parent: ^TreeNode, nodes: ..^TreeNode)
 {
     for node in nodes {
-        tv_addnode_internal(tv, node, NodeOp.Add_Child, -1, parent)
+        node._nodeOp = .Add_Child
+        node._index = this._itemCount
+        node._insAfter = TVI_LAST
+        append(&parent.nodes, node)
+        this._itemCount += 1
+        parent._nodeCount += 1
+        if this.handle != nil do tv_addnode_internal(this, node, parent)
     }
 }
 
-@private treeview_add_child_nodes2:: proc(tv: ^TreeView, parent: ^TreeNode, nodetexts: ..string)
+@private tv_add_child_nodes2:: proc(this: ^TreeView, parent: ^TreeNode, nodetexts: ..any)
 {
     for txt in nodetexts {
-        node:= new_treenode(txt)
-        tv_addnode_internal(tv, node, NodeOp.Add_Child, -1, parent)
+        node:= new_treenode(to_str(txt))
+        node._nodeOp = .Add_Child
+        node._index = this._itemCount
+        node._insAfter = TVI_LAST
+        append(&parent.nodes, node)
+        this._itemCount += 1
+        parent._nodeCount += 1
+        if this.handle != nil do tv_addnode_internal(this, node, parent)
     }
 }
 
-@private treeview_add_child_nodes3:: proc(tv: ^TreeView, parentIndex: int, nodetexts: ..string)
+@private tv_add_child_nodes3:: proc(this: ^TreeView, parentIndex: int, nodetexts: ..any)
 {
-    if parentIndex < len(tv.nodes)
-    {
-       parent:= tv.nodes[parentIndex]
-        for txt in nodetexts
-        {
-            node:= new_treenode(txt)
-            tv_addnode_internal(tv, node, NodeOp.Add_Child, -1, parent)
+    if parentIndex > len(this.nodes) || parentIndex < 0 do return
+    parent:= this.nodes[parentIndex]
+    for txt in nodetexts {
+        node:= new_treenode(to_str(txt))
+        node._nodeOp = .Add_Child
+        node._index = this._itemCount
+        node._insAfter = TVI_LAST
+        append(&parent.nodes, node)
+        this._itemCount += 1
+        parent._nodeCount += 1
+        if this.handle != nil do tv_addnode_internal(this, node, parent)
+    }    
+}
+
+@private tv_insert_items_internal :: proc(this: ^TreeView, node: ^TreeNode, pnode: ^TreeNode = nil)
+{
+    tv_addnode_internal(this, node, pnode)
+    if len(node.nodes) > 0 {
+        for cnode in node.nodes {
+            tv_insert_items_internal(this, cnode, node) 
         }
-    }
-    else {
-        print("Error: Parent index is bigger that node count")
-    }
+    }    
 }
 
-@private make_tvitem:: proc(tv: ^TreeView, node: ^TreeNode) -> TVITEMEXW
+// This function handles add or insert nodes & child nodes.
+@private tv_addnode_internal:: proc(tv: ^TreeView, node: ^TreeNode, pnode: ^TreeNode = nil)
 {
+    if !tv._isCreated do return
+    node._isCreated = true
+    node._treeHwnd = tv.handle
+    node._nodeID = tv._uniqItemID // We can identify any node with this
+    err_msg:= "Can't Add Node"
+
     tvi: TVITEMEXW
     tvi.mask = TVIF_TEXT | TVIF_PARAM
-    tvi.pszText = to_wstring(node.text, context.allocator)
+    tvi.pszText = to_wstring(node.text)
     tvi.cchTextMax = i32(len(node.text))
     tvi.iImage = i32(node.imageIndex)
     tvi.iSelectedImage = i32(node.selImageIndex)
@@ -368,65 +543,38 @@ treeview_create_image_list:: proc(tv: ^TreeView, nImg: int, ico_size: int = 16)
     if node.imageIndex > -1 do tvi.mask |= TVIF_IMAGE
     if node.selImageIndex > -1 do tvi.mask |= TVIF_SELECTEDIMAGE
     if node.foreColor != def_fore_clr do tv._nodeClrChange = true
-    return tvi
-}
 
-// This function handles add or insert nodes & child nodes.
-@private tv_addnode_internal:: proc(tv: ^TreeView, node: ^TreeNode, nop: NodeOp,
-                                        pos: int = -1, pnode: ^TreeNode = nil)
-{
-    if !tv._isCreated do return
-    node._isCreated = true
-    // node._notify_handler = self.notify_parent
-    node._treeHwnd = tv.handle
-    node._index = tv._itemCount
-    node._nodeID = tv._uniqItemID // We can identify any node with this
-    is_main_node:= false // A flag var to identify some boolean condition.
-    err_msg:= "Can't Add Node"
-    tvi:= make_tvitem(tv, node)
     tis: TVINSERTSTRUCT
     tis.itemEx = tvi
     tis.itemEx.lParam = dir_cast(rawptr(node), LPARAM)
+    tis.hInsertAfter = node._insAfter
 
-    switch nop {
+    switch node._nodeOp {
         case .Add_Node:
             tis.hParent = TVI_ROOT
-            tis.hInsertAfter = tv.nodes[tv._itemCount - 1].handle if tv._itemCount > 0 else TVI_FIRST
-            is_main_node = true
+
         case .Insert_Node:
             tis.hParent = TVI_ROOT
-            tis.hInsertAfter = TVI_FIRST if pos == 0 else tv.nodes[pos - 1].handle
-            is_main_node = true
             err_msg = "Can't Insert Node"
+            
         case .Add_Child:
-            tis.hInsertAfter = TVI_LAST
             tis.hParent = pnode.handle
             node.parentNode = pnode
-            append(&pnode.nodes, node)
-            pnode._nodeCount += 1
             err_msg = "Can't Add Child Node"
+
         case .Insert_Child:
             tis.hParent = pnode.handle
-            tis.hInsertAfter = TVI_FIRST if pos == 0 else pnode.nodes[pos - 1].handle
             node.parentNode = pnode
-            append(&pnode.nodes, node)
-            pnode._nodeCount += 1
             err_msg = "Can't Insert Child Node"
     }
 
     lres:= SendMessage(tv.handle, TVM_INSERTITEMW, 0,  dir_cast(&tis, LPARAM) )
-    free(tvi.pszText)
     if lres != 0 {
         hItem:= dir_cast(lres, HTREEITEM)
         node.handle = hItem
         tv._uniqItemID += 1
     } else {
         print(err_msg)
-    }
-
-    if is_main_node {
-        append(&tv.nodes, node)
-        tv._itemCount += 1
     }
 }
 
@@ -493,25 +641,6 @@ treeview_create_image_list:: proc(tv: ^TreeView, nImg: int, ico_size: int = 16)
     if tv.noButtons && tv.noLines do tv._style ~= TVS_LINESATROOT
 }
 
-@private tv_before_creation:: proc(tv: ^TreeView) {tv_adjust_styles(tv)}
-
-@private tv_after_creation:: proc(tv: ^TreeView)
-{
-	set_subclass(tv, tv_wnd_proc)
-    setfont_internal(tv)
-    if tv.backColor != app.clrWhite {
-        cref:= get_color_ref(tv.backColor)
-        SendMessage(tv.handle, TVM_SETBKCOLOR, 0, dir_cast(cref, LPARAM) )
-    }
-    if tv.foreColor != app.clrBlack {
-        cref:= get_color_ref(tv.foreColor)
-        SendMessage(tv.handle, TVM_SETTEXTCOLOR, 0, dir_cast(cref, LPARAM) )
-    }
-    if tv.lineColor != app.clrBlack  {
-        cref:= get_color_ref(tv.lineColor)
-        SendMessage(tv.handle, TVM_SETLINECOLOR, 0, dir_cast(cref, LPARAM) )
-    }
-}
 
 @private treeview_property_setter:: proc(this: ^TreeView, prop: TreeViewProps, value: $T)
 {
@@ -529,13 +658,12 @@ treeview_create_image_list:: proc(tv: ^TreeView, nImg: int, ico_size: int = 16)
 	}
 }
 
-@private tv_finalize:: proc(this: ^TreeView, scid: UINT_PTR)
+@private tv_finalize:: proc(this: ^TreeView)
 {
     for n in this.nodes { n._dispose(n)} // looping thru the child nodes and delete them.
     delete(this.nodes)                  // delete all the top level nodes.
-    font_destroy(&this.font)
     ImageList_Destroy(this.imageList)
-    RemoveWindowSubclass(this.handle, tv_wnd_proc, scid)
+    control_base_dtor(this)
     free(this)
 }
 
@@ -546,26 +674,29 @@ treeview_create_image_list:: proc(tv: ^TreeView, nImg: int, ico_size: int = 16)
     context = global_context
     
     //display_msg(msg)
-    tv:= control_cast(TreeView, ref_data)
-    res := ctrl_common_msg_handler(tv, hw, msg, wp, lp) 
+    this := control_cast(TreeView, ref_data)
+    res := ctrl_common_msg_handler(this, hw, msg, wp, lp) 
     #partial switch res {
         case .Call_Def_Proc: return DefSubclassProc(hw, msg, wp, lp)
         case .Immediate_Return: return 1
     }
     switch msg {
     case WM_DESTROY:
-        if tv.onDestroy != nil {
+        if this.onDestroy != nil {
             ea:= new_event_args()
-            tv.onDestroy(tv, &ea)
+            this.onDestroy(this, &ea)
         }
-        tv_finalize(tv, sc_id)
+
+    case WM_NCDESTROY:
+        RemoveWindowSubclass(this.handle, tv_wnd_proc, sc_id)
+        tv_finalize(this)
 
     case CM_TVNODEEXPAND:
         node:= dir_cast(lp, ^TreeNode)
-        SendMessage(tv.handle, TVM_EXPAND, wp, dir_cast(node.handle, LPARAM))
+        SendMessage(this.handle, TVM_EXPAND, wp, dir_cast(node.handle, LPARAM))
         if node.childCount > 0 {
             for n in node.nodes {
-                SendMessage(tv.handle, CM_TVNODEEXPAND, wp, dir_cast(n, LPARAM))
+                SendMessage(this.handle, CM_TVNODEEXPAND, wp, dir_cast(n, LPARAM))
             }
         }
         // return 0
@@ -574,24 +705,24 @@ treeview_create_image_list:: proc(tv: ^TreeView, nImg: int, ico_size: int = 16)
         nm:= dir_cast(lp, ^NMHDR)
         switch nm.code {
         case TVN_DELETEITEMW:
-            if tv.onNodeDeleted != nil {
+            if this.onNodeDeleted != nil {
                 // nmtv:= dir_cast(lp, ^NMTREEVIEW)
                 // tn:= dir_cast(nmtv.itemOld.lParam, ^TreeNode)
                 // ptf("%s's array deleted now\n", tn.text)
                 ea:= new_event_args()
-                tv.onNodeDeleted(tv, &ea)
+                this.onNodeDeleted(this, &ea)
             }
         case TVN_SELCHANGINGW:
-            if tv.onBeforeSelect != nil {
+            if this.onBeforeSelect != nil {
                 nmtv:= dir_cast(lp, ^NMTREEVIEW)
                 tea:= new_tree_event_args(nmtv)
-                tv.onBeforeSelect(tv, &tea)
+                this.onBeforeSelect(this, &tea)
             }
         case TVN_SELCHANGEDW:
             nmtv:= dir_cast(lp, ^NMTREEVIEW)
             tea:= new_tree_event_args(nmtv)
-            tv.selectedNode = tea.node
-            if tv.onAfterSelect != nil { tv.onAfterSelect(tv, &tea) }
+            this.selectedNode = tea.node
+            if this.onAfterSelect != nil { this.onAfterSelect(this, &tea) }
 
         case NM_TVSTATEIMAGECHANGING:
             //print("check NM_TVSTATEIMAGECHANGING")
@@ -599,42 +730,42 @@ treeview_create_image_list:: proc(tv: ^TreeView, nImg: int, ico_size: int = 16)
             //tea:= new_tree_event_args(tvsic)
 
             if tvsic.iOldStateImageIndex == 1 {
-                tv._nodeChecked = true }
+                this._nodeChecked = true }
             else if tvsic.iOldStateImageIndex == 2 {
-                tv._nodeChecked = false
+                this._nodeChecked = false
             }
 
             // print("chk new - ", tvsic.iNewStateImageIndex)
             //print("chk action - ", tvsic.iNewStateImageIndex)
 
         case TVN_ITEMCHANGINGW:
-            if tv.onBeforeChecked != nil {
+            if this.onBeforeChecked != nil {
                 tvic:= dir_cast(lp, ^TVITEMCHANGE)
                 tea:= new_tree_event_args(tvic)
-                if tv._nodeChecked do tea.node.checked = true
-                tv.onBeforeChecked(tv, &tea)
+                if this._nodeChecked do tea.node.checked = true
+                this.onBeforeChecked(this, &tea)
             }
 
         case TVN_ITEMCHANGEDW:
-            if tv.onAfterChecked != nil {
+            if this.onAfterChecked != nil {
                 tvic:= dir_cast(lp, ^TVITEMCHANGE)
                 tea:= new_tree_event_args(tvic)
-                if tv._nodeChecked do tea.node.checked = true
-                tv.onAfterChecked(tv, &tea)
+                if this._nodeChecked do tea.node.checked = true
+                this.onAfterChecked(this, &tea)
             }
 
         case TVN_ITEMEXPANDINGW:
             nmtv:= dir_cast(lp, ^NMTREEVIEW)
             switch nmtv.action {
             case 1:
-                if tv.onBeforeCollapse != nil {
+                if this.onBeforeCollapse != nil {
                     tea:= new_tree_event_args(nmtv)
-                    tv.onBeforeCollapse(tv, &tea)
+                    this.onBeforeCollapse(this, &tea)
                 }
             case 2:
-                if tv.onBeforeExpand != nil {
+                if this.onBeforeExpand != nil {
                     tea:= new_tree_event_args(nmtv)
-                    tv.onBeforeExpand(tv, &tea)
+                    this.onBeforeExpand(this, &tea)
                 }
             }
 
@@ -642,23 +773,23 @@ treeview_create_image_list:: proc(tv: ^TreeView, nImg: int, ico_size: int = 16)
             nmtv:= dir_cast(lp, ^NMTREEVIEW)
             switch nmtv.action {
             case 1:
-                if tv.onAfterCollapse != nil {
+                if this.onAfterCollapse != nil {
                     tea:= new_tree_event_args(nmtv)
-                    tv.onAfterCollapse(tv, &tea)
+                    this.onAfterCollapse(this, &tea)
                 }
             case 2:
-                if tv.onAfterExpand != nil {
+                if this.onAfterExpand != nil {
                     tea:= new_tree_event_args(nmtv)
-                    tv.onAfterExpand(tv, &tea)
+                    this.onAfterExpand(this, &tea)
                 }
             }
 
         case NM_CUSTOMDRAW:
-            if tv._nodeClrChange {
+            if this._nodeClrChange {
                 return treenode_color( lp)
             }
 
-        case:
+        // case:
             //print("else case - ", nm.code)
         // case 4294966879:
             //   print("4294966879 rcvd")

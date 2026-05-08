@@ -22,7 +22,7 @@ package winforms
 import "base:runtime"
 import api "core:sys/windows"
 
-@private _cbcount: int
+@private _cbcount: int = 1
 
 CheckBox:: struct
 {
@@ -41,54 +41,49 @@ new_checkbox:: proc{new_checkbox1, new_checkbox2}
 
 
 //===================================================Private functions=============================================
-@private cb_ctor:: proc(p: ^Form, txt: string, x, y, w, h: int) -> ^CheckBox
+@private cb_ctor:: proc(p: ^Control, txt: string, x, y, w, h: i32) -> ^CheckBox
 {
     this:= new(CheckBox)
-    _cbcount += 1
-    init_control(this, p, x, y, w, h, .Check_Box, COMM_CTRL_STYLES | BS_AUTOCHECKBOX, 
-                    WS_EX_LTRREADING | WS_EX_LEFT, wcnButton, TXTABLE, FONTABLE)
-    this._wtext = new_widestring(txt)
-    this.text = txt
-    this.backColor = p.backColor
-    this.foreColor = app.clrBlack
+    this.kind = .Check_Box
+    control_base_init(this, p, x, y, w, h, &_cbcount, txt)
     this._txtStyle = DT_SINGLELINE | DT_VCENTER
     this.autoSize = true
+    this._autoSizable = true
     this._SizeIncr.width = 20
     this._SizeIncr.height = 3
-    this._fp_beforeCreation = cast(CreateDelegate) cb_before_creation
-	this._fp_afterCreation = cast(CreateDelegate) cb_after_creation
+    this._createHandleProc = cb_create_handle
     return this
 }
 
-@private new_checkbox1:: proc(parent: ^Form, txt: string = "") -> ^CheckBox
+@private new_checkbox1:: proc(parent: ^Control, txt: string = "") -> ^CheckBox
 {
     cbtxt:= len(txt) == 0 ? conc_num("CheckBox_", _cbcount ): txt
-    cb:= cb_ctor(parent, cbtxt, 10, 10, 0, 0 )
-    if parent.createChilds do create_control(cb)
-    return cb
+    this := cb_ctor(parent, cbtxt, 10, 10, 0, 0 )
+    if this._ownerForm.createChilds do create_control(this)
+    return this
 }
 
-@private new_checkbox2:: proc(parent: ^Form, txt: string, x, y: int) -> ^CheckBox
+@private new_checkbox2:: proc(parent: ^Control, txt: string, x, y: i32) -> ^CheckBox
 {
-    cb:= cb_ctor(parent, txt, x, y, 0, 0)
-    if parent.createChilds do create_control(cb)
-    return cb
+    this:= cb_ctor(parent, txt, x, y, 0, 0)
+    if this._ownerForm.createChilds do create_control(this)
+    return this
 }
 
-@private new_checkbox3:: proc(parent: ^Form, txt: string, x, y, w, h: int) -> ^CheckBox
+@private new_checkbox3:: proc(parent: ^Control, txt: string, x, y, w, h: i32) -> ^CheckBox
 {
-    cb:= cb_ctor(parent, txt, x, y, w, h)
-    if parent.createChilds do create_control(cb)
-    return cb
+    this:= cb_ctor(parent, txt, x, y, w, h)
+    if this._ownerForm.createChilds do create_control(this)
+    return this
 }
 
-@private cb_before_creation:: proc(cb: ^CheckBox) {adjust_style(cb)}
-
-@private cb_after_creation:: proc(cb: ^CheckBox)
+@private cb_create_handle :: proc(ctl: ^Control)
 {
-	set_subclass(cb, cb_wnd_proc)
-    append(&cb.parent._cDrawChilds, cb.handle)
-    if cb.autoSize do calculate_ctl_size(cb)
+	this := cast(^CheckBox)ctl
+	adjust_style(this)	
+	create_control(ctl, this.width, this.height)
+	set_subclass(this, cb_wnd_proc)	
+    if this.autoSize do calculate_ctl_size(ctl)
 }
 
 @private adjust_style:: proc(cb: ^CheckBox)
@@ -117,12 +112,10 @@ new_checkbox:: proc{new_checkbox1, new_checkbox2}
 	}
 }
 
-@private cb_finalize:: proc(this: ^CheckBox, scid: UINT_PTR)
+@private cb_finalize:: proc(this: ^CheckBox)
 {
     delete_gdi_object(this._bkBrush)
-    widestring_destroy(this._wtext)
-    font_destroy(&this.font)
-    RemoveWindowSubclass(this.handle, cb_wnd_proc, scid)
+    control_base_dtor(this)
     free(this)
 }
 
@@ -131,36 +124,36 @@ new_checkbox:: proc{new_checkbox1, new_checkbox2}
 {
     context = global_context
     // context = runtime.default_context()
-     cb:= control_cast(CheckBox, ref_data)
-    res := ctrl_common_msg_handler(cb, hw, msg, wp, lp) 
+    this := control_cast(CheckBox, ref_data)
+    res := ctrl_common_msg_handler(this, hw, msg, wp, lp) 
     #partial switch res {
         case .Call_Def_Proc: return DefSubclassProc(hw, msg, wp, lp)
         case .Immediate_Return: return 1
     }
     switch msg {
         case WM_PAINT:           
-            if cb.onPaint != nil {
+            if this.onPaint != nil {
                 ps: PAINTSTRUCT
                 hdc:= BeginPaint(hw, &ps)
                 pea:= new_paint_event_args(&ps)
-                cb.onPaint(cb, &pea)
+                this.onPaint(this, &pea)
                 EndPaint(hw, &ps)
                 return 0
             }
 
         case CM_CTLCOMMAND:
-            cb.checked = cast(bool) SendMessage(hw, BM_GETCHECK, 0, 0)
-            if cb.onCheckChanged != nil {
+            this.checked = cast(bool) SendMessage(hw, BM_GETCHECK, 0, 0)
+            if this.onCheckChanged != nil {
                 ea:= new_event_args()
-                cb.onCheckChanged(cb, &ea)
+                this.onCheckChanged(this, &ea)
             }
 
         case CM_STATIC_COLOR:
             hd:= dir_cast(wp, HDC)
-            bkref:= get_color_ref(cb.backColor)
+            bkref:= get_color_ref(this.backColor)
             api.SetBkMode(hd, api.BKMODE.TRANSPARENT)
-            if cb._bkBrush == nil do cb._bkBrush = CreateSolidBrush(bkref)
-            return toLRES(cb._bkBrush)
+            if this._bkBrush == nil do this._bkBrush = CreateSolidBrush(bkref)
+            return toLRES(this._bkBrush)
 
         case CM_NOTIFY:
             nmcd:= dir_cast(lp, ^NMCUSTOMDRAW)
@@ -168,20 +161,20 @@ new_checkbox:: proc{new_checkbox1, new_checkbox2}
                 case CDDS_PREERASE:
                     return CDRF_NOTIFYPOSTERASE
                 case CDDS_PREPAINT:
-                    cref:= get_color_ref(cb.foreColor)
+                    cref:= get_color_ref(this.foreColor)
                     rct: RECT = nmcd.rc
-                    if cb.textAlign == .Left{
+                    if this.textAlign == .Left{
                         rct.left += 18
                     } else do rct.right -= 18
                     SetTextColor(nmcd.hdc, cref)
-                    DrawText(nmcd.hdc, to_wstring(cb.text), -1, &rct, cb._txtStyle)
+                    DrawText(nmcd.hdc, to_wstring(this.text), -1, &rct, this._txtStyle)
                     // // free_all(context.temp_allocator)
                     return CDRF_SKIPDEFAULT
             }
 
-        case WM_DESTROY: 
-            cb:= control_cast(CheckBox, ref_data)
-            cb_finalize(cb, sc_id)
+        case WM_NCDESTROY: 
+            RemoveWindowSubclass(this.handle, cb_wnd_proc, sc_id)
+            cb_finalize(this)
 
         case: return DefSubclassProc(hw, msg, wp, lp)
     }

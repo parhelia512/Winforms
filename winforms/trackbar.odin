@@ -64,8 +64,8 @@ TkbThumbCdraw:= dir_cast( 0x2, DWORD_PTR)
 TkbChannelCdraw:= dir_cast( 0x3, DWORD_PTR)
 TkbItemPrePaint:= dir_cast(65537, DWORD_PTR)
 
-wcnTrackBar := L("msctls_trackbar32")
-trkcount: int = 0
+
+_trkcount: int = 1
 
 
 TrackBar:: struct 
@@ -140,17 +140,17 @@ TicData:: struct
     return tc
 }
 
-@private tbar_ctor:: proc(f: ^Form, x, y, w, h: int) -> ^TrackBar
+@private tbar_ctor:: proc(parent: ^Control, x, y, w, h: i32) -> ^TrackBar
 {
-    if trkcount == 0
+    if _trkcount == 1
     {
         app.iccx.dwIcc = 0x4
         InitCommonControlsEx(&app.iccx)
     }
-    this:= new(TrackBar)
-    init_control(this, f, x, y, w, h, .Track_Bar, COMM_CTRL_STYLES | TBS_AUTOTICKS, 0, wcnTrackBar, NO_TXT, NO_FONT)
-    trkcount += 1
-    this.backColor = f.backColor
+    this:= new(TrackBar) 
+    this.kind = .Track_Bar
+    control_base_init(this, parent, x, y, w, h, &_trkcount)
+    this._createHandleProc = tkb_create_handle
     this.channelColor = light_steel_blue
     this.ticColor = 0x000000
     this.frequency = 10
@@ -166,32 +166,47 @@ TicData:: struct
     this.channelColor = 0xc2c2a3
     this.selColor = 0x99ff33
     this.ticColor = 0x3385ff
-    // this.text = "my track"
-    this._fp_beforeCreation = cast(CreateDelegate) tkb_before_creation
-	this._fp_afterCreation = cast(CreateDelegate) tkb_after_creation
     this._chanFlag = BF_RECT | BF_ADJUST
     return this
 }
 
-@private new_tbar1:: proc(parent: ^Form) -> ^TrackBar
+@private new_tbar1:: proc(parent: ^Control) -> ^TrackBar
 {
-    tkb:= tbar_ctor(parent, 10, 10, _def_tkb_width, _def_tkb_height)
-    if parent.createChilds do create_control(tkb)
-    return tkb
+    this := tbar_ctor(parent, 10, 10, _def_tkb_width, _def_tkb_height)
+    if this._ownerForm.createChilds do create_control(this)
+    return this
 }
 
-@private new_tbar2:: proc(parent: ^Form, x, y: int) -> ^TrackBar
+@private new_tbar2:: proc(parent: ^Control, x, y: i32) -> ^TrackBar
 {
-    tkb:= tbar_ctor(parent, x, y, _def_tkb_width, _def_tkb_height)
-    if parent.createChilds do create_control(tkb)
-    return tkb
+    this := tbar_ctor(parent, x, y, _def_tkb_width, _def_tkb_height)
+    if this._ownerForm.createChilds do create_control(this)
+    return this
 }
 
-@private new_tbar3:: proc(parent: ^Form, x, y, w, h: int) -> ^TrackBar
+@private new_tbar3:: proc(parent: ^Control, x, y, w, h: i32) -> ^TrackBar
 {
-    tkb:= tbar_ctor(parent, x, y, w, h)
-    if parent.createChilds do create_control(tkb)
-    return tkb
+    this := tbar_ctor(parent, x, y, w, h)
+    if this._ownerForm.createChilds do create_control(this)
+    return this
+}
+
+@private tkb_create_handle :: proc(ctl: ^Control)
+{
+	this := cast(^TrackBar)ctl
+	tkb_adjust_styles(this)	
+	create_control(ctl, this.width, this.height)
+
+	// Prepare for custom draw
+    this._chanPen = CreatePen(PS_SOLID, 1, get_color_ref(this.channelColor))
+    this._ticPen = CreatePen(PS_SOLID, i32(this.ticWidth), get_color_ref(this.ticColor))
+
+    // Calculate tic positions.
+    if this.customDraw do calculate_tics(this)
+    set_subclass(this, tkb_wnd_proc)
+
+    // Send some important messages to Wndproc function.
+    send_initial_messages(this) 	
 }
 
 @private tkb_adjust_styles:: proc(tkb: ^TrackBar)
@@ -411,24 +426,24 @@ TicData:: struct
     }
 }
 
-@private tkb_before_creation:: proc(tkb: ^TrackBar) {tkb_adjust_styles(tkb)}
+// @private tkb_before_creation:: proc(tkb: ^TrackBar) {tkb_adjust_styles(tkb)}
 
-@private tkb_after_creation:: proc(tkb: ^TrackBar)
-{
-    // Prepare for custom draw
-    tkb._chanPen = CreatePen(PS_SOLID, 1, get_color_ref(tkb.channelColor))
-    tkb._ticPen = CreatePen(PS_SOLID, i32(tkb.ticWidth), get_color_ref(tkb.ticColor))
+// @private tkb_after_creation:: proc(tkb: ^TrackBar)
+// {
+//     // Prepare for custom draw
+//     tkb._chanPen = CreatePen(PS_SOLID, 1, get_color_ref(tkb.channelColor))
+//     tkb._ticPen = CreatePen(PS_SOLID, i32(tkb.ticWidth), get_color_ref(tkb.ticColor))
 
-    // Calculate tic positions.
-    if tkb.customDraw do calculate_tics(tkb)
-    set_subclass(tkb, tkb_wnd_proc)
+//     // Calculate tic positions.
+//     if tkb.customDraw do calculate_tics(tkb)
+//     set_subclass(tkb, tkb_wnd_proc)
 
-    // Send some important messages to Wndproc function.
-    send_initial_messages(tkb)    
+//     // Send some important messages to Wndproc function.
+//     send_initial_messages(tkb)    
     
-    // Prepare our selection range brush if needed.
-    // if tkb.selRange do tkb._selBrush = get_solid_brush(tkb.selColor)
-}
+//     // Prepare our selection range brush if needed.
+//     // if tkb.selRange do tkb._selBrush = get_solid_brush(tkb.selColor)
+// }
 
 @private trackbar_property_setter:: proc(this: ^TrackBar, prop: TrackBarProps, value: $T)
 {
@@ -457,13 +472,12 @@ TicData:: struct
 	}
 }
 
-@private tkb_finalize:: proc(this: ^TrackBar, scid: UINT_PTR)
+@private tkb_finalize:: proc(this: ^TrackBar)
 {
     delete_gdi_object(this._bkBrush)
     delete_gdi_object(this._selBrush)
-    font_destroy(&this.font)
     delete(this._ticDataList)
-    RemoveWindowSubclass(this.handle, tkb_wnd_proc, scid)
+    control_base_dtor(this)
     free(this)
 }
 
@@ -471,33 +485,26 @@ TicData:: struct
                                         sc_id: UINT_PTR, ref_data: DWORD_PTR) -> LRESULT
 {
     context = global_context 
-    // context = runtime.default_context()
     
     // display_msg(msg)
-    tkb:= control_cast(TrackBar, ref_data)
-    res := ctrl_common_msg_handler(tkb, hw, msg, wp, lp) 
+    this := control_cast(TrackBar, ref_data)
+    res := ctrl_common_msg_handler(this, hw, msg, wp, lp) 
     #partial switch res {
         case .Call_Def_Proc: return DefSubclassProc(hw, msg, wp, lp)
         case .Immediate_Return: return 1
     }
     switch msg {
-    case WM_DESTROY: 
-        tkb:= control_cast(TrackBar, ref_data)
-        tkb_finalize(tkb, sc_id)
+    case WM_NCDESTROY: 
+        RemoveWindowSubclass(this.handle, tkb_wnd_proc, sc_id)
+        tkb_finalize(this)
 
     case CM_STATIC_COLOR:
-        // hdc:= dir_cast(wp, HDC)
-        // SetTextColor(hdc, get_color_ref(tkb.foreColor))
-        // tkb._bkBrush = CreateSolidBrush(get_color_ref(tkb.backColor))
-        tkb:= control_cast(TrackBar, ref_data)
-        // ptf("tkb brush %d", tkb._bkBrush)
-        return dir_cast(tkb._bkBrush, LRESULT)
+        return dir_cast(this._bkBrush, LRESULT)
 
     case CM_NOTIFY:
         nmh:= dir_cast(lp, ^NMHDR)
         if nmh.code == NM_CUSTOMDRAW {
-            tkb:= control_cast(TrackBar, ref_data)
-            if tkb.customDraw {
+            if this.customDraw {
                 nmcd:= dir_cast(lp, ^NMCUSTOMDRAW)
                 switch nmcd.dwDrawStage {
                 case CDDS_PREPAINT: 
@@ -508,7 +515,7 @@ TicData:: struct
 
                     // TkbTicsCdraw is not a magical value. Explanation is given at line 39
                     case TkbTicsCdraw:
-                        if (!tkb.noTick) do draw_tics(tkb, nmcd.hdc)                                       
+                        if (!this.noTick) do draw_tics(this, nmcd.hdc)                                       
                         return CDRF_SKIPDEFAULT
 
                     // TkbChannelCdraw is not a magical value. Explanation is given at line 39
@@ -519,11 +526,11 @@ TicData:: struct
                         these flags. But in this case, we don't need to reduce 1 point from...
                         the coloring rect. It looks perfect without changing rect. 
                         ==========================================================================*/
-                        if !tkb.selRange {
-                            if tkb.channelStyle == ChannelStyle.classic {
-                                DrawEdge(nmcd.hdc, &nmcd.rc, BDR_SUNKENOUTER, tkb._chanFlag)
+                        if !this.selRange {
+                            if this.channelStyle == ChannelStyle.classic {
+                                DrawEdge(nmcd.hdc, &nmcd.rc, BDR_SUNKENOUTER, this._chanFlag)
                             } else {
-                                SelectObject(nmcd.hdc, HGDIOBJ(tkb._chanPen))
+                                SelectObject(nmcd.hdc, HGDIOBJ(this._chanPen))
                                 Rectangle(nmcd.hdc, nmcd.rc.left, nmcd.rc.top, nmcd.rc.right, nmcd.rc.bottom );
                             }
                         } else {
@@ -533,7 +540,7 @@ TicData:: struct
                             =====================================================*/
                             DrawEdge(nmcd.hdc, &nmcd.rc, BDR_OUTER, BIG_CHANNEL_EDGE)
                             rc: RECT = get_thumb_rect(hw)
-                            if fill_channel_rect(tkb, nmcd, rc) do InvalidateRect(hw, &nmcd.rc, false)
+                            if fill_channel_rect(this, nmcd, rc) do InvalidateRect(hw, &nmcd.rc, false)
                         }
                         return CDRF_SKIPDEFAULT
                     }
@@ -544,56 +551,55 @@ TicData:: struct
         }
 
     case WM_HSCROLL, WM_VSCROLL:
-        tkb:= control_cast(TrackBar, ref_data)
         lwp:= LOWORD(wp)
         switch lwp {
         case TB_THUMBPOSITION:
-            setup_value_internal(tkb, i32(HIWORD(wp)))
-            if !tkb.freeMove {
-                pos: i32 = i32(tkb.value)
-                half: f32 = f32(tkb.frequency) / 2
-                diff: i32 = pos %% i32(tkb.frequency)
+            setup_value_internal(this, i32(HIWORD(wp)))
+            if !this.freeMove {
+                pos: i32 = i32(this.value)
+                half: f32 = f32(this.frequency) / 2
+                diff: i32 = pos %% i32(this.frequency)
 
                 if diff >= i32(half) {
-                    pos = (i32(tkb.frequency) - diff) + i32(tkb.value)
+                    pos = (i32(this.frequency) - diff) + i32(this.value)
                 } else if diff < i32(half) {
-                    pos =  i32(tkb.value) - diff
+                    pos =  i32(this.value) - diff
                 }
 
-                if tkb.reversed {
+                if this.reversed {
                     SendMessage(hw, TBM_SETPOS, WPARAM(1), LPARAM(pos * -1))
                 } else {
                     SendMessage(hw, TBM_SETPOS, WPARAM(1), LPARAM(pos))
                 }
 
-                tkb.value = int(pos)
+                this.value = int(pos)
             }
 
             // We need to refresh Trackbar in order to display our new drawings.
-            InvalidateRect(hw, &tkb._chanRC, false)
+            InvalidateRect(hw, &this._chanRC, false)
 
-            if tkb.onDragged != nil {
+            if this.onDragged != nil {
                 ea:= new_event_args()
-                tkb.onDragged(tkb, &ea)
+                this.onDragged(this, &ea)
             }
 
-            if tkb.onValueChanged != nil {
+            if this.onValueChanged != nil {
                 ea:= new_event_args()
-                tkb.onValueChanged(tkb, &ea)
+                this.onValueChanged(this, &ea)
             }
 
         case THUMB_LINE_HIGH, THUMB_LINE_LOW, THUMB_PAGE_HIGH, THUMB_PAGE_LOW:
-            setup_value_internal(tkb, i32(SendMessage(hw, TBM_GETPOS, 0, 0)))
-            if tkb.onValueChanged != nil {
+            setup_value_internal(this, i32(SendMessage(hw, TBM_GETPOS, 0, 0)))
+            if this.onValueChanged != nil {
                 ea:= new_event_args()
-                tkb.onValueChanged(tkb, &ea)
+                this.onValueChanged(this, &ea)
             }
 
         case TB_THUMBTRACK:
-            setup_value_internal(tkb, i32(SendMessage(hw, TBM_GETPOS, 0, 0)))
-            if tkb.onDragging != nil {
+            setup_value_internal(this, i32(SendMessage(hw, TBM_GETPOS, 0, 0)))
+            if this.onDragging != nil {
                 ea:= new_event_args()
-                tkb.onDragging(tkb, &ea)
+                this.onDragging(this, &ea)
             }
         }
 

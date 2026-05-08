@@ -74,55 +74,62 @@ radiobutton_set_autocheck:: proc(rb: ^RadioButton, auto_check: bool )
 }
 
 //===========================================Private Functions======================================
-@private rb_ctor:: proc(f: ^Form, txt: string, x, y, w, h: int) -> ^RadioButton
+@private rb_ctor:: proc(f: ^Control, txt: string, x, y, w, h: i32) -> ^RadioButton
 {
     this:= new(RadioButton)
-    init_control(this, f, x, y, w, h, .Radio_Button, 
-                    COMM_CTRL_STYLES | BS_AUTORADIOBUTTON | WS_CLIPCHILDREN, 0, 
-                    wcnButton, TXTABLE, FONTABLE)
-    this.text = txt
-    this._wtext = new_widestring(txt)
+    this.kind = .Radio_Button
+    control_base_init(this, f, x, y, w, h, &rb_count, txt)
+    this._createHandleProc = rb_create_handle
     this.checkOnClick = true
     this.autoSize = true
-    this.backColor = f.backColor
-    this.foreColor = f.foreColor
+    this._autoSizable = true
     this._txtStyle = DT_SINGLELINE | DT_VCENTER
     this._SizeIncr.width = 20
     this._SizeIncr.height = 3
-    this._fp_beforeCreation = cast(CreateDelegate) rb_before_creation
-	this._fp_afterCreation = cast(CreateDelegate) rb_after_creation
     this._inherit_color = true
     return this
 }
 
-@private new_rb1:: proc(parent: ^Form) -> ^RadioButton
+@private new_rb1:: proc(parent: ^Control) -> ^RadioButton
 {
     rb_count += 1
     rtxt:= conc_num("Radio_Button_", rb_count)
-    rb:= rb_ctor(parent, rtxt, 10, 10, 100, 25 )
-    if parent.createChilds do create_control(rb)
-    return rb
+    this := rb_ctor(parent, rtxt, 10, 10, 100, 25 )
+    if this._ownerForm.createChilds do create_control(this)
+    return this
 }
 
-@private new_rb2:: proc(parent: ^Form, txt: string) -> ^RadioButton
+@private new_rb2:: proc(parent: ^Control, txt: string) -> ^RadioButton
 {
-    rb:= rb_ctor(parent, txt, 10, 10, 100, 25 )
-    if parent.createChilds do create_control(rb)
-    return rb
+    this := rb_ctor(parent, txt, 10, 10, 100, 25 )
+    if this._ownerForm.createChilds do create_control(this)
+    return this
 }
 
-@private new_rb3:: proc(parent: ^Form, txt: string, x, y: int) -> ^RadioButton
+@private new_rb3:: proc(parent: ^Control, txt: string, x, y: i32) -> ^RadioButton
 {
-    rb:= rb_ctor(parent, txt, x, y, 100, 25 )
-    if parent.createChilds do create_control(rb)
-    return rb
+    this := rb_ctor(parent, txt, x, y, 100, 25 )
+    if this._ownerForm.createChilds do create_control(this)
+    return this
 }
 
-@private new_rb4:: proc(parent: ^Form, txt: string, x, y, w, h: int) -> ^RadioButton
+@private new_rb4:: proc(parent: ^Control, txt: string, x, y, w, h: i32) -> ^RadioButton
 {
-    rb:= rb_ctor(parent, txt, x, y, w, h )
-    if parent.createChilds do create_control(rb)
-    return rb
+    this := rb_ctor(parent, txt, x, y, w, h )
+    if this._ownerForm.createChilds do create_control(this)
+    return this
+}
+
+@private rb_create_handle :: proc(ctl: ^Control)
+{
+	this := cast(^RadioButton)ctl
+	rb_adjust_styles(this)	
+	create_control(ctl, this.width, this.height)
+	set_subclass(this, rb_wnd_proc)
+    if this.autoSize do calculate_ctl_size(this)
+    if this.checked {
+        SendMessage(this.handle, BM_SETCHECK, WPARAM(0x0001), 0)
+    }	
 }
 
 @private rb_adjust_styles:: proc(rb: ^RadioButton)
@@ -131,19 +138,19 @@ radiobutton_set_autocheck:: proc(rb: ^RadioButton, auto_check: bool )
     //if rb.textAlign = .right do rb.
 }
 
-@private rb_before_creation:: proc(rb: ^RadioButton)
-{
-    rb_adjust_styles(rb)
-}
+// @private rb_before_creation:: proc(rb: ^RadioButton)
+// {
+//     rb_adjust_styles(rb)
+// }
 
-@private rb_after_creation:: proc(rb: ^RadioButton)
-{
-    set_subclass(rb, rb_wnd_proc)
-    if rb.autoSize do calculate_ctl_size(rb)
-    if rb.checked {
-        SendMessage(rb.handle, BM_SETCHECK, WPARAM(0x0001), 0)
-    }
-}
+// @private rb_after_creation:: proc(rb: ^RadioButton)
+// {
+//     set_subclass(rb, rb_wnd_proc)
+//     if rb.autoSize do calculate_ctl_size(rb)
+//     if rb.checked {
+//         SendMessage(rb.handle, BM_SETCHECK, WPARAM(0x0001), 0)
+//     }
+// }
 
 @private radiobutton_property_setter:: proc(this: ^RadioButton, prop: RadioButtonProps, value: $T)
 {
@@ -155,13 +162,11 @@ radiobutton_set_autocheck:: proc(rb: ^RadioButton, auto_check: bool )
 	}
 }
 
-@private rb_finalize:: proc(this: ^RadioButton, hw: HWND, scid: UINT_PTR)
+@private rb_finalize:: proc(this: ^RadioButton)
 {
     delete_gdi_object(this._hbrush)
-    font_destroy(&this.font)
-    widestring_destroy(this._wtext)
-    free(this, context.allocator)
-    RemoveWindowSubclass(hw, rb_wnd_proc, scid)
+    control_base_dtor(this)
+    free(this, context.allocator)    
 }
 
 @private rb_wnd_proc:: proc "stdcall" (hw: HWND, msg: u32, wp: WPARAM, lp: LPARAM,
@@ -170,33 +175,34 @@ radiobutton_set_autocheck:: proc(rb: ^RadioButton, auto_check: bool )
     context = global_context  
     // context = runtime.default_context()  
     //display_msg(msg)
-    rb:= control_cast(RadioButton, ref_data)
-    res := ctrl_common_msg_handler(rb, hw, msg, wp, lp) 
+    this := control_cast(RadioButton, ref_data)
+    res := ctrl_common_msg_handler(this, hw, msg, wp, lp) 
     #partial switch res {
         case .Call_Def_Proc: return DefSubclassProc(hw, msg, wp, lp)
         case .Immediate_Return: return 1
     }
     switch msg {
-    case WM_DESTROY: 
-        rb_finalize(rb, hw, sc_id)
+    case WM_NCDESTROY: 
+        RemoveWindowSubclass(this.handle, rb_wnd_proc, sc_id)
+        rb_finalize(this)
 
     case CM_CTLCOMMAND:
         if HIWORD(wp) == 0 {
-            rb.checked = bool(SendMessage(rb.handle, BM_GETCHECK, 0, 0))
-            if rb.onStateChanged != nil {
+            this.checked = bool(SendMessage(this.handle, BM_GETCHECK, 0, 0))
+            if this.onStateChanged != nil {
                 ea:= new_event_args()
-                rb.onStateChanged(rb, &ea)
+                this.onStateChanged(this, &ea)
             }
         }
 
     case CM_STATIC_COLOR:
         hdc:= dir_cast(wp, HDC)
         api.SetBkMode(hdc, api.BKMODE.TRANSPARENT)
-        SetBkColor(hdc, get_color_ref(rb.backColor))
-        rb._hbrush = CreateSolidBrush(get_color_ref(rb.backColor))
-        // print("rb bkc ", rb.backColor)
-        // return toLRES(rb._hbrush)
-        return toLRES(rb._hbrush)
+        SetBkColor(hdc, get_color_ref(this.backColor))
+        this._hbrush = CreateSolidBrush(get_color_ref(this.backColor))
+        // print("rb bkc ", this.backColor)
+        // return toLRES(this._hbrush)
+        return toLRES(this._hbrush)
 
     case CM_NOTIFY:
         nmcd:= dir_cast(lp, ^NMCUSTOMDRAW)
@@ -204,14 +210,14 @@ radiobutton_set_autocheck:: proc(rb: ^RadioButton, auto_check: bool )
         case CDDS_PREERASE:
             return CDRF_NOTIFYPOSTERASE
         case CDDS_PREPAINT:
-            cref:= get_color_ref(rb.foreColor)
+            cref:= get_color_ref(this.foreColor)
             rct: RECT = nmcd.rc
-            if rb.textAlign == .Left{
+            if this.textAlign == .Left{
                 rct.left += 18
             } else do rct.right -= 18
             SetTextColor(nmcd.hdc, cref)
-            // SetBackColor(nmcd.hdc, get_color_ref(rb.backColor))
-            DrawText(nmcd.hdc, rb._wtext.ptr, -1, &rct, rb._txtStyle)
+            // SetBackColor(nmcd.hdc, get_color_ref(this.backColor))
+            DrawText(nmcd.hdc, this._wtext.ptr, -1, &rct, this._txtStyle)
             // free_all(context.temp_allocator)
             return CDRF_SKIPDEFAULT
         }

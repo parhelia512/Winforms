@@ -9,7 +9,7 @@ import "core:time"
 import api "core:sys/windows"
 
 _pbxCount : int
-wcnPictureBox := L("Winforms_PictureBox")
+
 _isPbxRegistered : bool
 
 
@@ -25,7 +25,7 @@ PictureBox :: struct {
 
 }
 
-new_picturebox :: proc(p: ^Form, x, y, w, h: int, 
+new_picturebox :: proc(p: ^Form, x, y, w, h: i32, 
                         imgPath: string, picSizeMode: PictureSizeMode) -> ^PictureBox 
 {
     this := pbox_ctor(p, x, y, w, h)
@@ -49,7 +49,7 @@ pbox_set_sizemode :: proc(this: ^PictureBox, smode: PictureSizeMode)
 }
 
 // Set picture box size, You can keep the old value by passing a zero.
-pbox_set_size :: proc(this: ^PictureBox, w, h: int)
+pbox_set_size :: proc(this: ^PictureBox, w, h: i32)
 {
     if w > 0 do this.width = w 
     if h > 0 do this.height = h 
@@ -62,8 +62,8 @@ pbox_set_size :: proc(this: ^PictureBox, w, h: int)
     this._imgPath = imgPath
     if len(imgPath) > 0 do this.image = new_image(imgPath)
     if this.sizeMode == .Auto_Size {        
-        this.width = cast(int)this.image.width
-        this.height = cast(int)this.image.height        
+        this.width = cast(i32)this.image.width
+        this.height = cast(i32)this.image.height        
     }
     pbox_update_client_rect(this)
 }
@@ -74,8 +74,8 @@ pbox_set_size :: proc(this: ^PictureBox, w, h: int)
     this.image = img 
     this._imgPath = img.imgPath
     if this.sizeMode == .Auto_Size {        
-        this.width = cast(int)this.image.width
-        this.height = cast(int)this.image.height        
+        this.width = cast(i32)this.image.width
+        this.height = cast(i32)this.image.height        
     }
     pbox_update_client_rect(this)
 }
@@ -118,32 +118,39 @@ pbox_clear_image :: proc(this: ^PictureBox)
     _isPbxRegistered = true
 }
 
-@private pbox_ctor:: proc(p: ^Form, x, y, w, h: int) -> ^PictureBox 
+@private pbox_ctor:: proc(p: ^Control, x, y, w, h: i32) -> ^PictureBox 
 {
     if !_isPbxRegistered do register_picturebox_class()
    
     this:= new(PictureBox)
-    init_control(this, p, x, y, w, h, .Picture_Box, COMM_CTRL_STYLES, 0, 
-                                                    wcnPictureBox, NO_TXT, NO_FONT)
-    this.backColor = app.clrWhite
-    this.foreColor = app.clrBlack
-	this._fp_beforeCreation = cast(CreateDelegate) pbox_before_creation
-	this._fp_afterCreation = cast(CreateDelegate) pbox_after_creation
+    this.kind = .Picture_Box
+    control_base_init(this, p, x, y, w, h, &_pbxCount)  
+    this._createHandleProc = pbx_create_handle  
     return this
 }
 
-@private pbox_before_creation :: proc(this: ^PictureBox) 
+@private pbx_create_handle :: proc(ctl: ^Control)
 {
-    this._size = SIZE{cast(i32)this.width, cast(i32)this.height}
-    if len(this._imgPath) > 0 do pbox_set_image(this, this._imgPath)
-    
+	this := cast(^PictureBox)ctl
+	this._size = SIZE{this.width, this.height}
+    if len(this._imgPath) > 0 do pbox_set_image(this, this._imgPath)	
+	create_control(ctl, this.width, this.height)
+	SetWindowLongPtr(this.handle, GWLP_USERDATA, cast(LONG_PTR) cast(UINT_PTR) this)
+    GetClientRect(this.handle, &this._rect)	
 }
 
-@private pbox_after_creation :: proc(this: ^PictureBox) 
-{
-    SetWindowLongPtr(this.handle, GWLP_USERDATA, cast(LONG_PTR) cast(UINT_PTR) this)
-    GetClientRect(this.handle, &this._rect)
-}
+// @private pbox_before_creation :: proc(this: ^PictureBox) 
+// {
+//     this._size = SIZE{cast(i32)this.width, cast(i32)this.height}
+//     if len(this._imgPath) > 0 do pbox_set_image(this, this._imgPath)
+    
+// }
+
+// @private pbox_after_creation :: proc(this: ^PictureBox) 
+// {
+//     SetWindowLongPtr(this.handle, GWLP_USERDATA, cast(LONG_PTR) cast(UINT_PTR) this)
+//     GetClientRect(this.handle, &this._rect)
+// }
 
 @private pbox_update_client_rect :: proc(this: ^PictureBox) 
 {
@@ -202,13 +209,14 @@ pbox_clear_image :: proc(this: ^PictureBox)
 @private pbox_adjust_size_to_image :: proc(this: ^PictureBox) 
 {
     if this.image != nil {
-        this.width = cast(int)this.image.width
-        this.height = cast(int)this.image.height
+        this.width = cast(i32)this.image.width
+        this.height = cast(i32)this.image.height
     }
 }
 
 @private pbox_finalize :: proc(this: ^PictureBox) {
     if this.image != nil do image_destroy(this.image)
+    control_base_dtor(this)
     free(this, context.allocator)
 }
 
@@ -217,28 +225,28 @@ pbox_clear_image :: proc(this: ^PictureBox)
 pbx_window_proc :: proc "stdcall" (hw : HWND, msg : u32, wp : WPARAM, lp : LPARAM ) -> LRESULT
 {
 	context = global_context
-    pbx := dir_cast(GetWindowLongPtr(hw, GWLP_USERDATA), ^PictureBox)
-    res := ctrl_common_msg_handler(pbx, hw, msg, wp, lp) 
+    this := dir_cast(GetWindowLongPtr(hw, GWLP_USERDATA), ^PictureBox)
+    res := ctrl_common_msg_handler(this, hw, msg, wp, lp) 
     #partial switch res {
         case .Call_Def_Proc: return DefSubclassProc(hw, msg, wp, lp)
         case .Immediate_Return: return 1
     }
 	switch msg {
     case WM_NCDESTROY:
-        pbox_finalize(pbx)
+        pbox_finalize(this)
 
     case WM_PAINT:
         ps: PAINTSTRUCT
         hdc: HDC = BeginPaint(hw, &ps) 
         defer EndPaint(hw, &ps)             
-        if pbx.image != nil { 
-            image_draw(pbx.image, hdc, pbx._rect.left, pbx._rect.top, 
-                            pbx._rect.right - pbx._rect.left, 
-                            pbx._rect.bottom - pbx._rect.top)
+        if this.image != nil { 
+            image_draw(this.image, hdc, this._rect.left, this._rect.top, 
+                            this._rect.right - this._rect.left, 
+                            this._rect.bottom - this._rect.top)
         } else {
             // If no image, fill with background color
             // print("No image to draw, filling with background color");
-            hbr: HBRUSH = CreateSolidBrush(get_color_ref(pbx.backColor))
+            hbr: HBRUSH = CreateSolidBrush(get_color_ref(this.backColor))
             defer delete_gdi_object(hbr)
             api.FillRect(hdc, &ps.rcPaint, hbr);
             
@@ -251,8 +259,8 @@ pbx_window_proc :: proc "stdcall" (hw : HWND, msg : u32, wp : WPARAM, lp : LPARA
 
     case WM_SIZE:        
         // ptf("PictureBox resized, new size: %d x %d", LOWORD(lParam), HIWORD(lParam));
-        if (pbx != nil) {
-            if pbx.sizeMode != .Auto_Size do InvalidateRect(hw, nil, true)
+        if (this != nil) {
+            if this.sizeMode != .Auto_Size do InvalidateRect(hw, nil, true)
             }      
 
     case :

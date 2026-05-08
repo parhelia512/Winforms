@@ -38,7 +38,7 @@ import "base:runtime"
 
 
 isDtpClassInit: bool = false
-wcnDTP := L("SysDateTimePick32")
+_dtpCounter: int = 1
 
 
 
@@ -92,44 +92,50 @@ dtp_set_custom_format:: proc(dtp: ^DateTimePicker, fmt_string: string)
 }
 
 //==================================Private Functions========================
-@private dtp_ctor:: proc(p: ^Form, x, y, w, h: int) -> ^DateTimePicker
+@private dtp_ctor:: proc(p: ^Control, x, y, w, h: i32) -> ^DateTimePicker
 {
     if !isDtpClassInit { // global var of this module. Then we need to initialize the date class control.
         isDtpClassInit = true
         app.iccx.dwIcc = ICC_DATE_CLASSES
         InitCommonControlsEx(&app.iccx)
-        // print("inited comctrlex")
     }
-    dtp:= new(DateTimePicker)
-    init_control(dtp, p, x, y, w, h, .Date_Time_Picker, 0x52000004, WS_EX_LEFT, wcnDTP, TXTABLE, FONTABLE)
-    dtp.text = ""
-    dtp.format = .Custom
-    dtp._fp_size_fix = set_dtp_size
-    dtp.formatString = " dd-MMM-yyyy"
-    dtp._fp_beforeCreation = cast(CreateDelegate) dtp_before_creation
-	dtp._fp_afterCreation = cast(CreateDelegate) dtp_after_creation    
-    return dtp
+    this:= new(DateTimePicker)
+    this.kind = .Date_Time_Picker
+    control_base_init(this, p, x, y, w, h, &_dtpCounter)
+    this._createHandleProc = dtp_create_handle
+    this.format = .Custom
+    this._fp_size_fix = set_dtp_size
+    this.formatString = " dd-MMM-yyyy"   
+    return this
 }
 
-@private new_dtp1:: proc(parent: ^Form) -> ^DateTimePicker
+@private new_dtp1:: proc(parent: ^Control) -> ^DateTimePicker
 {
-    dtp:= dtp_ctor(parent, 10, 10, 120, 30 )
-    if parent.createChilds do create_control(dtp)
-    return dtp
+    this:= dtp_ctor(parent, 10, 10, 120, 30 )
+    if this._ownerForm.createChilds do create_control(this)
+    return this
 }
 
-@private new_dtp2:: proc(parent: ^Form, x, y: int) -> ^DateTimePicker
+@private new_dtp2:: proc(parent: ^Control, x, y: i32) -> ^DateTimePicker
 {
-    dtp:= dtp_ctor(parent, x, y, 120, 30)
-    if parent.createChilds do create_control(dtp)
-    return dtp
+    this:= dtp_ctor(parent, x, y, 120, 30)
+    if this._ownerForm.createChilds do create_control(this)
+    return this
 }
 
-@private new_dtp3:: proc(parent: ^Form, x, y, w, h: int) -> ^DateTimePicker
+@private new_dtp3:: proc(parent: ^Control, x, y, w, h: i32) -> ^DateTimePicker
 {
-    dtp:= dtp_ctor(parent,x, y, w, h)
-    if parent.createChilds do create_control(dtp)
-    return dtp
+    this:= dtp_ctor(parent,x, y, w, h)
+    if this._ownerForm.createChilds do create_control(this)
+    return this
+}
+
+@private dtp_create_handle :: proc(ctl: ^Control)
+{
+	this := cast(^DateTimePicker)ctl
+	set_dtp_style_internal(this)
+	create_control(ctl, this.width, this.height)
+	dtp_after_creation(this)	
 }
 
 @private set_dtp_style_internal:: proc(dtp: ^DateTimePicker)
@@ -159,30 +165,11 @@ dtp_set_custom_format:: proc(dtp: ^DateTimePicker, fmt_string: string)
     if dtp.showUpdown do dtp._style ~= DTS_UPDOWN
 }
 
-// @private get_dtp_info:: proc(dp: ^DateTimePicker) {
-//     di: DATETIMEPICKERINFO
-//     di.cbSize = size_of(di)
-//     SendMessage(dp.handle, DTM_GETDATETIMEPICKERINFO, WPARAM(0), dir_cast(&di, LPARAM ))
-//     using dp._dtp_info
-//     tb_handle = di.hwndEdit
-//     ud_handle = di.hwndUD
-//     dd_handle = di.hwndDropDown
-//     dtp_handle = dp.handle
-
-// }
-
-// print_dtpinfo:: proc(di: DtpInfo) {
-//     ptf("Edit HANDLE - %d\n", di.tb_handle)
-//     ptf("Updown HANDLE - %d\n", di.ud_handle)
-//     ptf("Dropdown HANDLE - %d\n", di.dd_handle)
-//     ptf("Dtp HANDLE - %d\n", di.dtp_handle)
-//     print("---------------------------------------------------")
-// }
 
 // Set custom date format for a DTP control.
 // To see how to create a custom format, see the docs.
 
-@private dtp_before_creation:: proc(dtp: ^DateTimePicker) {set_dtp_style_internal(dtp)}
+// @private dtp_before_creation:: proc(dtp: ^DateTimePicker) {set_dtp_style_internal(dtp)}
 
 @private dtp_after_creation:: proc(dtp: ^DateTimePicker)
 {
@@ -210,8 +197,8 @@ dtp_set_custom_format:: proc(dtp: ^DateTimePicker, fmt_string: string)
 {
     ss: SIZE
     SendMessage(dtp.handle, DTM_GETIDEALSIZE, 0, to_lparam(&ss))
-    dtp.width = int(ss.cx + 3)
-    dtp.height = int(ss.cy )
+    dtp.width = ss.cx + 3
+    dtp.height = ss.cy 
     SetWindowPos(dtp.handle, nil, dtp.xpos, dtp.ypos, dtp.width, dtp.height, SWP_NOZORDER)
 }
 
@@ -242,10 +229,9 @@ dtp_set_custom_format:: proc(dtp: ^DateTimePicker, fmt_string: string)
 }
 
 
-@private dtp_finalize:: proc(this: ^DateTimePicker, scid: UINT_PTR)
+@private dtp_finalize:: proc(this: ^DateTimePicker)
 {
-    RemoveWindowSubclass(this.handle, dtp_wnd_proc, scid)
-    font_destroy(&this.font)
+    control_base_dtor(this)
     free(this)
 }
 
@@ -255,73 +241,74 @@ dtp_wnd_proc:: proc "stdcall" (hw: HWND, msg: u32, wp: WPARAM, lp: LPARAM,
 {
     // context = runtime.default_context()
     context = global_context
-    dtp:= control_cast(DateTimePicker, ref_data)
+    this:= control_cast(DateTimePicker, ref_data)
     //display_msg(msg)
-     res := ctrl_common_msg_handler(dtp, hw, msg, wp, lp) 
+     res := ctrl_common_msg_handler(this, hw, msg, wp, lp) 
     #partial switch res {
         case .Call_Def_Proc: return DefSubclassProc(hw, msg, wp, lp)
         case .Immediate_Return: return 1
     }
     switch msg {
-    case WM_DESTROY:             
-        dtp_finalize(dtp, sc_id)
+    case WM_NCDESTROY:  
+        RemoveWindowSubclass(this.handle, dtp_wnd_proc, sc_id)           
+        dtp_finalize(this)
 
     case WM_PAINT:
-        if dtp.onPaint != nil {
+        if this.onPaint != nil {
             ps: PAINTSTRUCT
             hdc:= BeginPaint(hw, &ps)
             pea:= new_paint_event_args(&ps)
-            dtp.onPaint(dtp, &pea)
+            this.onPaint(this, &pea)
             EndPaint(hw, &ps)
             return 0
         }
 
     case WM_CONTEXTMENU:
-        if dtp.contextMenu != nil do contextmenu_show(dtp.contextMenu, lp)
+        if this.contextMenu != nil do contextmenu_show(this.contextMenu, lp)
 
     case CM_NOTIFY:
         nm:= dir_cast(lp, ^NMHDR)
         switch nm.code { 
         case DTN_USERSTRING:
-            if dtp.onTextChanged != nil {
+            if this.onTextChanged != nil {
                 dts:= dir_cast(lp, ^NMDATETIMESTRINGW)
                 dtea: DateTimeEventArgs
                 dtea.dateString = wstring_to_string(dts.pszUserString)
-                dtp.onTextChanged(dtp, &dtea )
+                this.onTextChanged(this, &dtea )
                 // After invoking the event, send this message to set the time in dtp
-                if dtea.handled do SendMessage(dtp.handle, DTM_SETSYSTEMTIME, 0, dir_cast(&dtea.dateStruct, LPARAM))
+                if dtea.handled do SendMessage(this.handle, DTM_SETSYSTEMTIME, 0, dir_cast(&dtea.dateStruct, LPARAM))
                 // free_all(context.temp_allocator)
 
             }
         case DTN_DROPDOWN:
-            if dtp.onCalendarOpened != nil {
+            if this.onCalendarOpened != nil {
                 ea:= new_event_args()
-                dtp.onCalendarOpened(dtp, &ea)
+                this.onCalendarOpened(this, &ea)
                 return 0
             }
 
         case DTN_DATETIMECHANGE:
             // For unknown reason, this notification occures two times.
             // So we need to use an integer value to limit it once and only.
-            if dtp._valueChangeCount == 0 {
-                dtp._valueChangeCount = 1
+            if this._valueChangeCount == 0 {
+                this._valueChangeCount = 1
                 dtc:= dir_cast(lp, ^NMDATETIMECHANGE)
-                dtp.value = systime_to_datetime(dtc.st)
-                if dtp.onValueChanged != nil {
+                this.value = systime_to_datetime(dtc.st)
+                if this.onValueChanged != nil {
                     ea:= new_event_args()
-                    dtp.onValueChanged(dtp, &ea)
+                    this.onValueChanged(this, &ea)
                     return 0
                 }
-            } else if dtp._valueChangeCount == 1 {
-                dtp._valueChangeCount = 0
+            } else if this._valueChangeCount == 1 {
+                this._valueChangeCount = 0
                 return 0
             }
             return 0
 
         case DTN_CLOSEUP:
-            if dtp.onCalendarClosed != nil {
+            if this.onCalendarClosed != nil {
                 ea:= new_event_args()
-                dtp.onCalendarClosed(dtp, &ea)
+                this.onCalendarClosed(this, &ea)
             }
         }    
 

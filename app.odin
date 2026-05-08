@@ -1,5 +1,5 @@
 
-
+#+feature using-stmt
 package main
 
 import "core:fmt"
@@ -18,6 +18,7 @@ import  ui "winforms"
     ti : ^ui.TrayIcon
     cmb : ^ui.ComboBox
     np1 : ^ui.NumberPicker
+    lb2 : ^ui.Label
     
 //
 cntme : int = 1
@@ -31,9 +32,13 @@ MakeWindow :: proc()
     frm.height = 600
     // frm.font = new_font("Tahoma", 13)
     print_points(frm)
-    frm.start_pos = .Mid_Right
+    frm.start_pos = .Center //.Mid_Right
     create_handle(frm)
-    frm.createChilds = true
+    // frm.createChilds = true
+
+
+    
+
     // Let's create a tray icon.
     ti = new_tray_icon("Winforms tray icon!", "winforms-icon.ico")
     // frm.onClick = frmClickProc // Show a balloon text when clicking on form.
@@ -42,11 +47,15 @@ MakeWindow :: proc()
     tray_add_context_menu(ti, false, .Any_Click, "Windows", "|", "Linux", "ReactOS")
     ti.contextMenu.menus[0].onClick = proc(c: rawptr, ea: ^EventArgs) {print("Windows menu selected")}
 
+    timer_ontick :: proc(f: rawptr, e: ^ui.EventArgs) {
+        print("Timer ticked")
+    }
 
     // // Let's add a timer to this form which ticks in every 400 ms.
     // // And our timer_ontick proc will be called on each tick.
     tmr = form_addTimer(frm, 400, timer_ontick)
 
+    
     mbar := new_menubar(frm, false, "File", "Edit", "Format")
     
 
@@ -55,52 +64,72 @@ MakeWindow :: proc()
     menubar_add_items(mbar, mbar.menus[1], "New Client", "Copy", "Delete")
     menubar_add_items(mbar, mbar.menus[2], "Font", "Line Space", "Para Spce")
     menubar_add_items(mbar, mbar.menus[0].menus[0], "Contract Work", "Carriage Work", "Transmission Work")
-    mbar.menus[0].menus[1].onClick = newclient_menuclick
+    // mbar.menus[0].menus[1].onClick = newclient_menuclick
     mbar.menus[0].menus[1].menuState = .Checked
-    b1 := new_button(frm, "Normal", 10, 10, 110, 35 )
-    b1.onClick = open_file_proc
 
+ 
+
+    b1 := new_button(frm, "Normal", 10, 10, 110, 35 )
+    // b1.onClick = open_file_proc
+    
+  
     b2 := new_button(frm, "Flat Color", cright(b1) + 20, 10, 120, 35 )
     set_property(b2, CommonProps.Back_Color, 0x94d2bd)
-    b2.onClick = b2_click_proc
+    // b2.onClick = b2_click_proc
 
     b3 := new_button(frm, "Gradient", cright(b2) + 20, 10, 110, 35 )
     button_set_gradient_colors(b3, 0xfb8500, 0xffbe0b)
 
+    
     cmb := new_combobox(frm, cright(b3) + 20, 10, .Tb_Combo)
     // cmb = new_combobox(frm, 530, 390)
     combo_add_items(cmb, "Windows", "MacOS", "Linux", "ReactOS")
     set_property(cmb, ComboProps.Selected_Index, 0)
     
     
-
+    
 
     dtp := new_datetimepicker(frm, cright(cmb) + 20, 10)
+    
     gb := new_groupbox(frm, "Format Options", 10, 80, w=230, h=110) //, style=.Classic)
-    lb1 := new_label(frm, "Line_Space", gbx(gb, 10), gby(gb, 40))
+    lb1 := new_label(gb, "Line_Space", 10, 40)
+    cb := new_checkbox(gb, "Show Timings", 10, 77)
+
     // set_property(lb1, CommonProps.Back_Color, 0xddAA45)
     // np1 = new_numberpicker(frm, cright(lb1) + 15, gby(gb, 35), deciPrec = 2, step = 1.5)
-    np1 = new_numberpicker(frm, 530, 390, deciPrec = 2, step = 1.5)
+    np1 = new_numberpicker(gb, 100, 37, 80, 30, deciPrec = 2, step = 1.5)
 
-    np1.foreColor = 0x9d0208
-    lb2 := new_label(frm, "Col Width", gbx(gb, 10), cbottom(lb1) + 12)
+    // np1.foreColor = 0x9d0208
+    np1.backColor = 0xddAA45 
+    // lb2 = new_label(frm, "pt: ", 80, 280)
+    // np1.onMouseDown = proc(c: ^ui.Control, ea: ^ui.MouseEventArgs) {
+    //     txt := fmt.tprintf("md X=%d, Y=%d, linex: %d", ea.x, ea.y, np1._lineX)
+
+    //     ui.control_set_text(lb2, txt)
+    // }
+    // control_place_right(np1, lb1, 10)
+
+
+    // lb2 := new_label(frm, "Col Width", gbx(gb, 10), cbottom(lb1) + 12)
     // np2 := new_numberpicker(frm, np1.xpos, cbottom(np1) + 15)
-    np2 := new_numberpicker(frm, 118, 157,)
-
-    np2.buttonOnLeft = true
-    np2.backColor = 0xcaffbf
+    
 
     gb2 := new_groupbox(frm, "Compiler Options", 10, cbottom(gb) + 20, w = 210, h = 200)
-    cb := new_checkbox(frm, "Show Timings", gbx(gb2, 10), gby(gb2, 40))
-    cb2 := new_checkbox(frm, "No Entry Point", gbx(gb2, 10), cbottom(cb) + 20)
+    gb2.foreColor = 0x8338ec
+    cb2 := new_checkbox(gb2, "No Entry Point", 15, 33)
 
-    rb1 := new_radiobutton(frm, "SubSystem:Windows", gbx(gb2, 10), cbottom(cb2) + 20)
+    rb1 := new_radiobutton(gb2, "SubSystem:Windows", 15, 65)
     rb1.foreColor = 0xd90429
-    rb2 := new_radiobutton(frm, "SubSystem:Console", gbx(gb2, 10), cbottom(rb1) + 10)
+    rb2 := new_radiobutton(gb2, "SubSystem:Console", 15, 100)
+    lb2 := new_label(gb2, "Threads:", 10, 140)
+    np2 := new_numberpicker(gb2, 80, 140, 80, 28, btnLeft = true)
+    np2.backColor = 0xcaffbf
+    np2.textAlignment = .Center
 
     lbx := new_listbox(frm, cright(gb) + 10, cbottom(b1) + 10)
     listbox_add_items(lbx, "Windows", "MacOS", "Linux", "ReactOS")
     set_property(cb2, CheckBoxProps.Checked, true)
+
 
     lv := new_listview(frm, cright(lbx) + 10, cbottom(b3) + 10, 340, 150, "Windows", "MacOS", "Linux", 100, 120, 100)
     listview_add_row(lv, "XP", "Mountain Lion", "RedHat")
@@ -109,26 +138,31 @@ MakeWindow :: proc()
     listview_add_row(lv, "Win8", "Catalina", "Debian")
     listview_add_row(lv, "Win10", " Big Sur", "Kali")
 
-    control_add_contextmenu(lv, false, "Compile", "Link Only", "|", "Make Console")
-    lv.contextMenu.menus[0].onClick = contextmenu_click // Handler for "Compile" menu
-    lv.contextMenu.menus[0].menuState = MenuState.Checked
+    // control_add_contextmenu(lv, false, "Compile", "Link Only", "|", "Make Console")
+    // lv.contextMenu.menus[0].onClick = contextmenu_click // Handler for "Compile" menu
+    // lv.contextMenu.menus[0].menuState = MenuState.Checked
     // lv.contextMenu._ownDraw = true
 
-    tb := new_textbox(frm, cright(gb2) + 10, cbottom(lbx) + 20)
+    tb := new_textbox(frm, 250, 280)
+
     pbx := new_picturebox(frm, cright(gb2) + 10, 328, 270, 180, "gbil.jpg", .Stretch)
 
     pgb = new_progressbar(frm, lv.xpos, cbottom(lv) + 15, lv.width, 30, perc = true)
+    
     tk = new_trackbar(frm, lv.xpos, cbottom(pgb) + 20, 200, 50)
-    // tk.customDraw = true
-    tk.onValueChanged = track_change_proc
+    tk.customDraw = true
+    tk.onValueChanged = track_change_proc    
 
     tv := new_treeview(frm, cright(lv) + 20, dtp.ypos, 250, 220)
     treeview_add_nodes(tv, "Windows", "MacOS", "Linux", "ReactOS")
     treeview_add_childnodes(tv, 0, "XP", "Vista", "Win7", "Win8", "Win10", "Win11")
     treeview_add_childnodes(tv, 1, "Mountain Lion", "Mavericks", "Catalina", "Big Sur", "Monterey")
     treeview_add_childnodes(tv, 2, "RedHat", "Mint", "Ubuntu", "Debian", "Kali")
+    treeview_add_node_with_children(tv, "BSD", "VersionA", "VersionB", "VersionC")
 
     cal := new_calendar(frm, tv.xpos, cbottom(tv) + 20)
+
+
 
     track_change_proc :: proc(c : rawptr, e : ^ui.EventArgs) {
         ui.progressbar_set_value(pgb, tk.value)
@@ -163,9 +197,7 @@ MakeWindow :: proc()
     }
     
 
-    timer_ontick :: proc(f: rawptr, e: ^ui.EventArgs) {
-        print("Timer ticked")
-    }
+    
 
     frmClickProc :: proc(c: ^ui.Control, ea: ^ui.EventArgs) {
         tray_show_balloon(ti, "Winforms", "Info from Winforms", 3000)
@@ -190,6 +222,9 @@ MakeWindow :: proc()
     ui.ctrl_set_mouse_leave_handler(np1, mlp)
     ui.ctrl_set_mouse_hover_handler(np1, mhp)
 
+
+    
+    ptf("frm bkg: %X, lb bkg: %X", frm.backColor, lb1.backColor)
     start_mainloop(frm)
 
 

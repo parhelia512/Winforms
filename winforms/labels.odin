@@ -18,7 +18,6 @@ package winforms
 import "base:runtime"
 //import "core:time"
 
-wcnStatic := L("Static")
 
 // this is for labels
 @private _lb_count:= 0
@@ -45,46 +44,53 @@ new_label:: proc{new_label1, new_label2, new_label3}
 
 
 //==================================Private Functions==================================
-@private label_ctor:: proc(p: ^Form, txt: string, x, y: int, w: int = 0, h: int = 0) -> ^Label 
+@private label_ctor:: proc(p: ^Control, txt: string, x, y: i32, w: i32 = 0, h: i32 = 0) -> ^Label 
 {
     _lb_count += 1
     this:= new(Label)
-    init_control(this, p, x, y, w, h, .Label, COMM_CTRL_STYLES | WS_CLIPCHILDREN | WS_CLIPSIBLINGS | SS_NOTIFY, 
-                    0, wcnStatic, TXTABLE, FONTABLE)
+    this.kind = .Label
+    control_base_init(this, p, x, y, w, h, &_lb_count, txt)
+    this._createHandleProc = lbl_create_handle
     this.autoSize = true
-    this.text = txt
-    this._wtext = new_widestring(txt)
-    this.backColor = p.backColor
-    this.foreColor = app.clrBlack
+    this._autoSizable = true
     this._SizeIncr.width = 2
     this._SizeIncr.height = 3
     this.autoSize = (w != 0 || h != 0) ? false: true
-    this._fp_beforeCreation = cast(CreateDelegate) lbl_before_creation
-    this._fp_afterCreation = cast(CreateDelegate) lbl_after_creation
     this._inherit_color = true
     return this
 }
 
-@private new_label1:: proc(parent: ^Form) -> ^Label 
+@private new_label1:: proc(parent: ^Control) -> ^Label 
 {
     txt:= conc_num("Label_", _lb_count)
-    lb:= label_ctor(parent, txt, 10, 10)
-    if parent.createChilds do create_control(lb)
-    return lb
+    this := label_ctor(parent, txt, 10, 10)
+    if this._ownerForm.createChilds do create_control(this)
+    return this
 }
 
-@private new_label2:: proc(parent: ^Form, txt: string, x, y: int) -> ^Label 
+@private new_label2:: proc(parent: ^Control, txt: string, x, y: i32) -> ^Label 
 {
-    lb:= label_ctor(parent, txt, x, y)
-    if parent.createChilds do create_control(lb)
-    return lb
+    this := label_ctor(parent, txt, x, y)
+    if this._ownerForm.createChilds do create_control(this)
+    return this
 }
 
-@private new_label3:: proc(parent: ^Form, txt: string, x, y, w, h: int) -> ^Label 
+@private new_label3:: proc(parent: ^Control, txt: string, x, y, w, h: i32) -> ^Label 
 {
-    lb:= label_ctor(parent, txt, x, y, w, h)
-    if parent.createChilds do create_control(lb)
-    return lb
+    this := label_ctor(parent, txt, x, y, w, h)
+    if this._ownerForm.createChilds do create_control(this)
+    return this
+}
+
+@private lbl_create_handle :: proc(ctl: ^Control)
+{
+	this := cast(^Label)ctl
+	if this.borderStyle != .No_Border do adjust_border(this)
+    this._hbrush = CreateSolidBrush(get_color_ref(this.backColor))
+    check_for_autosize(this)	
+	create_control(ctl, this.width, this.height)
+	set_subclass(this, label_wnd_proc)
+    if this.autoSize do calculate_label_size(this)	
 }
 
 @private check_for_autosize:: proc(lb: ^Label) 
@@ -147,28 +153,28 @@ new_label:: proc{new_label1, new_label2, new_label3}
     ss: SIZE
     select_gdi_object(hdc, this.font.handle)
     GetTextExtentPoint32(hdc, this._wtext.ptr, this._wtext.strLen, &ss )    
-    this.width = int(ss.cx + _padding)
-    this.height = int(ss.cy + _padding)
+    this.width = ss.cx + _padding
+    this.height = ss.cy + _padding
     lflag :UINT =  SWP_NOZORDER | SWP_NOACTIVATE // SWP_NOMOVE |
     control_setpos2(this.handle, this.xpos, this.ypos, this.width, this.height, SWP_NOMOVE)
     check_redraw(this, false)
 }
 
-@private lbl_before_creation:: proc(this: ^Label) 
-{
-    if this.borderStyle != .No_Border do adjust_border(this)
-    this._hbrush = CreateSolidBrush(get_color_ref(this.backColor))
-    check_for_autosize(this)
-    //adjust_alignment(this)
-}
+// @private lbl_before_creation:: proc(this: ^Label) 
+// {
+//     if this.borderStyle != .No_Border do adjust_border(this)
+//     this._hbrush = CreateSolidBrush(get_color_ref(this.backColor))
+//     check_for_autosize(this)
+//     //adjust_alignment(this)
+// }
 
-@private lbl_after_creation:: proc(this: ^Label) 
-{    
-    set_subclass(this, label_wnd_proc)
-    ctl_send_msg(this.handle, WM_SETFONT, this.font.handle, 1)
-    if this.autoSize do calculate_label_size(this)
-    // ptf("this hwnd %d, %d, %d, %d", this.handle, this.width, this.height, this.autoSize)
-}
+// @private lbl_after_creation:: proc(this: ^Label) 
+// {    
+//     set_subclass(this, label_wnd_proc)
+//     ctl_send_msg(this.handle, WM_SETFONT, this.font.handle, 1)
+//     if this.autoSize do calculate_label_size(this)
+//     // ptf("this hwnd %d, %d, %d, %d", this.handle, this.width, this.height, this.autoSize)
+// }
 
 @private label_property_setter:: proc(this: ^Label, prop: LabelProps, value: $T)
 {
@@ -180,12 +186,10 @@ new_label:: proc{new_label1, new_label2, new_label3}
     }
 }
 
-@private lbl_finalize:: proc(this: ^Label, scid: UINT_PTR)
+@private lbl_finalize:: proc(this: ^Label)
 {
     delete_gdi_object(this._hbrush)    
-    RemoveWindowSubclass(this.handle, label_wnd_proc, scid)
-    widestring_destroy(this._wtext)
-    font_destroy(&this.font)
+    control_base_dtor(this)        
     free(this)
 }
 
@@ -193,10 +197,14 @@ new_label:: proc{new_label1, new_label2, new_label3}
                                                     sc_id: UINT_PTR, ref_data: DWORD_PTR) -> LRESULT
 {
     context = global_context
-    // context = runtime.default_context()
+    this := control_cast(Label, ref_data)
+    res := ctrl_common_msg_handler(this, hw, msg, wp, lp) 
+    #partial switch res {
+        case .Call_Def_Proc: return DefSubclassProc(hw, msg, wp, lp)
+        case .Immediate_Return: return 1
+    }
     switch msg {
         case WM_PAINT:
-            this:= control_cast(Label, ref_data)
             if this.onPaint != nil {
                 ps: PAINTSTRUCT
                 hdc:= BeginPaint(hw, &ps)
@@ -204,113 +212,17 @@ new_label:: proc{new_label1, new_label2, new_label3}
                 this.onPaint(this, &pea)
                 EndPaint(hw, &ps)
                 return 0
-            }
-
-        case WM_CONTEXTMENU:
-            lb:= control_cast(Label, ref_data)
-		    if lb.contextMenu != nil do contextmenu_show(lb.contextMenu, lp)
-
-        case WM_LBUTTONDOWN:
-            lb:= control_cast(Label, ref_data)
-            
-            if lb.onMouseDown != nil {
-                mea:= new_mouse_event_args(msg, wp, lp)
-                lb.onMouseDown(lb, &mea)
-                return 0
-            }
-        case WM_RBUTTONDOWN:
-            lb:= control_cast(Label, ref_data)
-            if lb.onRightMouseDown != nil {
-                mea:= new_mouse_event_args(msg, wp, lp)
-                lb.onRightMouseDown(lb, &mea)
-            }
-        case WM_LBUTTONUP:
-            lb:= control_cast(Label, ref_data)
-           // print("label lbutton up")
-            if lb.onMouseUp != nil {
-                mea:= new_mouse_event_args(msg, wp, lp)
-                lb.onMouseUp(lb, &mea)
-            }            
-            if lb.onClick != nil {
-                ea:= new_event_args()
-                lb.onClick(lb, &ea)
-                return 0
-            }
-
-        case WM_LBUTTONDBLCLK:
-            lb:= control_cast(Label, ref_data)
-            if lb.onDoubleClick != nil {
-                ea:= new_event_args()
-                lb.onDoubleClick(lb, &ea)
-                return 0
-            }
-
-        case WM_RBUTTONUP:
-            lb:= control_cast(Label, ref_data)
-            if lb.onRightMouseUp != nil {
-                mea:= new_mouse_event_args(msg, wp, lp)
-                lb.onRightMouseUp(lb, &mea)
-            }            
-            if lb.onRightClick != nil {
-                ea:= new_event_args()
-                lb.onRightClick(lb, &ea)
-                return 0
-            }
-        case WM_MOUSEHWHEEL:
-            lb:= control_cast(Label, ref_data)
-            if lb.onMouseScroll != nil {
-                mea:= new_mouse_event_args(msg, wp, lp)
-                lb.onMouseScroll(lb, &mea)
-            }
-        case WM_MOUSEMOVE: // Mouse Enter & Mouse Move is happening here.
-            lb:= control_cast(Label, ref_data)
-            //print("label mouse move")
-            if !lb._isMouseTracking {
-                lb._isMouseTracking = true
-                track_mouse_move(hw)
-                if !lb._isMouseEntered {
-                    if lb.onMouseEnter != nil {
-                        lb._isMouseEntered = true
-                        ea:= new_event_args()
-                        lb.onMouseEnter(lb, &ea)
-                    }
-                }
-            }
-            //---------------------------------------
-            if lb.onMouseMove != nil {
-                mea:= new_mouse_event_args(msg, wp, lp)
-                lb.onMouseMove(lb, &mea)
-            }
-        case WM_MOUSEHOVER:
-            lb:= control_cast(Label, ref_data)
-            if lb._isMouseTracking do lb._isMouseTracking = false
-            if lb.onMouseHover != nil {
-                mea:= new_mouse_event_args(msg, wp, lp)
-                lb.onMouseHover(lb, &mea)
-            }
-        case WM_MOUSELEAVE:
-            lb:= control_cast(Label, ref_data)
-            if lb._isMouseTracking
-            {
-                lb._isMouseTracking = false
-                lb._isMouseEntered = false
-            }
-            if lb.onMouseLeave != nil
-            {
-                ea:= new_event_args()
-                lb.onMouseLeave(lb, &ea)
-            }
+            }        
 
         case CM_STATIC_COLOR:
-            this:= control_cast(Label, ref_data)
             hdc:= dir_cast(wp, HDC)
             if (this._drawFlag & 1) != 1 do SetTextColor(hdc, get_color_ref(this.foreColor))
             SetBkColor(hdc, get_color_ref(this.backColor))
             return toLRES(this._hbrush)
 
-        case WM_DESTROY: 
-            lb:= control_cast(Label, ref_data)
-            lbl_finalize(lb, sc_id)
+        case WM_NCDESTROY: 
+            RemoveWindowSubclass(this.handle, label_wnd_proc, sc_id)
+            lbl_finalize(this)
 
         case: return DefSubclassProc(hw, msg, wp, lp)
 

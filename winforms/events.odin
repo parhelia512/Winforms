@@ -17,9 +17,17 @@ ListViewItemEventHandler :: proc(sender: ^ListView, e: ^LVItemEventArgs)
 ListViewSelChangeEventHandler :: proc(sender: ^ListView, e: ^LVSelChangedEventArgs)
 ListViewItemCheckEventHandler :: proc(sender: ^ListView, e: ^LVItemCheckEventArgs)
 
-CreateDelegate :: proc(ctl : ^Control)
+// CreateDelegate :: proc(ctl : ^Control)
 ControlDelegate :: proc(ctl : ^Control)
 PropSetter :: proc(c: ^Control, p: any, v : any)
+
+MK_LBUTTON  : u32 : 0x0001
+MK_RBUTTON  : u32 : 0x0002
+MK_SHIFT    : u32 : 0x0004
+MK_CONTROL  : u32 : 0x0008
+MK_MBUTTON  : u32 : 0x0010
+MK_XBUTTON1 : u32 : 0x0020
+MK_XBUTTON2 : u32 : 0x0040
 
 
 EventArgs :: struct {handled : b64, cancelled : b64,}
@@ -28,8 +36,8 @@ MouseEventArgs :: struct
 	using base : EventArgs,
 	button : MouseButtons,
 	clicks, delta : i32,
-	shiftKey, ctrlKey : KeyState,
-	x, y : int,
+	shiftPressed, ctrlPressed : b32,
+	x, y : i32,
 }
 
 KeyEventArgs :: struct
@@ -104,34 +112,34 @@ new_event_args :: proc "contextless" () -> EventArgs
 }
 
 
-new_mouse_event_args :: proc(msg : u32, wp : WPARAM, lp : LPARAM) -> MouseEventArgs
+fill_mouse_event_args :: proc(this: ^MouseEventArgs, msg : u32, wpm : WPARAM, lpm : LPARAM) 
 {
-	mea : MouseEventArgs
-	fwKeys := LOWORD(wp) // cast(WORD) (wp & 0xffff) //(lo_word(cast(DWORD) wp))
+	fwKeys := LOWORD(wpm) 
 	//fmt.println("fwKeys - ", fwKeys)
-	mea.delta = cast(i32)(HIWORD(wp))
-	switch fwKeys {
-	case 5 : mea.shiftKey = KeyState.Pressed
-	case 9 : mea.ctrlKey = KeyState.Pressed
-	case 17 : mea.button = MouseButtons.Middle
-	case 33 : mea.button = MouseButtons.XButton1
-	}
+	this.delta = cast(i32)(HIWORD(wpm))
+	this.shiftPressed = (cast(u32)wpm & MK_SHIFT) != 0
+	this.ctrlPressed = (cast(u32)wpm & MK_CONTROL) != 0
+	this.delta = cast(i32)(HIWORD(wpm))
+	this.x = cast(i32)(cast(i16)LOWORD(lpm))
+	this.y = cast(i32)(cast(i16)HIWORD(lpm))
 
 	switch msg {
-	case WM_MOUSEWHEEL, WM_MOUSEMOVE, WM_MOUSEHOVER, WM_NCHITTEST :
-		mea.x = int(get_x_lpm(lp)) //cast(int) (lo_word(cast(DWORD) lp))
-		mea.y = int(get_y_lpm(lp)) //cast(int) (hi_word(cast(DWORD) lp))
-	case WM_LBUTTONDOWN, WM_LBUTTONUP :
-        mea.button = MouseButtons.Left
-        mea.x = int(get_x_lpm(lp)) //
-        mea.y = int(get_y_lpm(lp))
-    case WM_RBUTTONDOWN, WM_RBUTTONUP :
-        mea.button = MouseButtons.Right ;
-        mea.x = int(get_x_lpm(lp)) //
-        mea.y = int(get_y_lpm(lp))
+	case WM_LBUTTONDOWN, WM_LBUTTONUP:
+        this.button = MouseButtons.Left
+    case WM_RBUTTONDOWN, WM_RBUTTONUP:
+        this.button = MouseButtons.Right
+    case WM_MBUTTONDOWN, WM_MBUTTONUP:
+        this.button = MouseButtons.Middle
+    case :
+        check_value := cast(u32)wpm
+        if (check_value & MK_LBUTTON) != 0 {
+            this.button = MouseButtons.Left
+        } else if (check_value & MK_RBUTTON) != 0 {
+            this.button = MouseButtons.Right
+        }else if (check_value & MK_MBUTTON) != 0 {
+            this.button = MouseButtons.Middle
+        }        
 	}
-    
-	return mea
 }
 
 new_key_event_args :: proc(wP : WPARAM) -> KeyEventArgs

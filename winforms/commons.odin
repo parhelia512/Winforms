@@ -13,30 +13,26 @@ print :: fmt.println
 def_back_clr :: 0xFFFFFF
 def_fore_clr :: 0x000000
 gea : EventArgs 
-COMM_CTRL_STYLES : UINT = WS_CHILD | WS_VISIBLE | WS_TABSTOP
-TXTABLE : bool = true
-FONTABLE : bool = true
-NO_TXT : bool = false
-NO_FONT : bool = false
 
-@private init_control :: proc(this: ^Control, parent: ^Form, x, y, w, h: int, 
-								ctyp: ControlKind, style: DWORD, exStyle: DWORD, 
-								clsName: [^]u16, textable: bool, hasFont: bool)
-{
-	this.kind = ctyp
-	this._textable = textable
-	this._hasFont = hasFont
-	this.xpos = x
-	this.ypos = y
-	this.width = w
-	this.height = h
-	this.parent = parent
-	this._exStyle = exStyle
-	this._style = style
-	this._clsName = clsName
-	if hasFont do font_clone(&parent.font, &this.font)
-	append(&parent._controls, this)
-}
+
+// @private init_control :: proc(this: ^Control, parent: ^Form, x, y, w, h: i32, 
+// 								ctyp: ControlKind, style: DWORD, exStyle: DWORD, 
+// 								clsName: [^]u16, textable: bool, hasFont: bool)
+// {
+// 	this.kind = ctyp
+// 	this._textable = textable
+// 	this._hasFont = hasFont
+// 	this.xpos = x
+// 	this.ypos = y
+// 	this.width = w
+// 	this.height = h
+// 	this.parent = parent
+// 	this._exStyle = exStyle
+// 	this._style = style
+// 	this._clsName = clsName
+// 	if hasFont do font_clone(&parent.font, &this.font)
+// 	append(&parent._controls, this)
+// }
 
 
 
@@ -54,7 +50,15 @@ send_thread_msg :: proc(formHwnd: HWND, wpm: WPARAM, lpm: LPARAM) -> LRESULT
 	return SendNotifyMessage(formHwnd, CM_THREAD_MSG, wpm, lpm)
 }
 
-to_str :: proc(value : any) -> string {return fmt.tprint(value)}
+to_str :: #force_inline proc(value : any) -> string 
+{	
+	if tstr, is_str:= value.(string); is_str { // Magic -- type assert
+		return tstr
+	} else {
+		return fmt.tprint(value)
+	}	
+}
+
 L :: intrinsics.constant_utf16_cstring
 
 current_time_internal :: proc() -> Time
@@ -107,8 +111,8 @@ draw_ellipse :: proc(dch : HDC, rc : RECT)
 {
 	ss : SIZE
     SendMessage(ctl.handle, BCM_GETIDEALSIZE, 0, dir_cast( &ss, LPARAM))
-    ctl.width = int(ss.cx)
-    ctl.height = int(ss.cy)
+    ctl.width = ss.cx
+    ctl.height = ss.cy
     MoveWindow(ctl.handle, i32(ctl.xpos), i32(ctl.ypos), ss.cx, ss.cy, true)
 }
 
@@ -395,7 +399,7 @@ create_handle :: proc(ctl : ^$T)
 	when T == Form {
 		create_form(ctl)
 	} else {
-		create_control(ctl)
+		create_control(ctl, this.width, this.height)
 	}
 }
 

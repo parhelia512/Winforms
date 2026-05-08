@@ -230,6 +230,9 @@ foreign user32 {
    // @(link_name="RegisterHotKey") RegisterHotKey :: proc(HWND, INT, UINT, UINT) -> BOOL ---
    @(link_name="UnregisterHotKey") UnregisterHotKey :: proc(HWND, api.INT) -> BOOL ---
    @(link_name="IsChild") IsChild :: proc(HWND, HWND) -> BOOL ---
+   @(link_name="GetSysColor") GetSysColor :: proc(iSysColor: i32) -> COLORREF ---
+   @(link_name="OffsetRect") OffsetRect :: proc(prc: ^RECT, dx, dy: i32) -> BOOL ---
+   @(link_name="ClientToScreen") ClientToScreen :: proc(hw: HWND, prc: ^POINT) -> BOOL ---
 
 
 
@@ -316,7 +319,11 @@ foreign gdi32 {
    @(link_name="GetRgnBox") GetRgnBox :: proc(hrgn: HRGN, lprc: ^RECT) -> BOOL---
    @(link_name="ExtTextOutW") ExtTextOut :: proc(hdc: HDC, x, y: i32, opt: u32, lprc: ^RECT, str: WCPTR, c: u32, lpdx: ^i32) -> BOOL---
    @(link_name="FillRgn") FillRgn :: proc(hdc: HDC, hrg: HRGN, hbr: HBRUSH) -> BOOL---
-   // @(link_name="GetObjectW") GetObject :: proc(h: HANDLE, c: i32, p: LPVOID) -> i32---
+   @(link_name="CreateRectRgn") CreateRectRgn :: proc(l, t, r, b: i32) -> HRGN---
+   @(link_name="SelectClipRgn") SelectClipRgn :: proc(hdc: HDC, hrgn: HRGN) -> i32---
+   @(link_name="CombineRgn") CombineRgn :: proc(hrgnDst: HRGN, hrgnS1: HRGN, hrgnS2: HRGN, iMode: i32) -> i32---
+   @(link_name="CreateRectRgnIndirect") CreateRectRgnIndirect :: proc(lprc: ^RECT) -> HRGN---
+
 
 
 } // Gdi32 library

@@ -28,9 +28,7 @@ import "base:runtime"
 import "core:fmt"
 import api "core:sys/windows"
 
-
-wcnEdit := L("Edit")
-
+_tbCount : int = 1
 
 
 TextBox:: struct
@@ -84,94 +82,88 @@ textbox_clear_all:: proc(tb: ^TextBox)
 }
 
 //==========================================Private Functions==================================
-@private tb_ctor:: proc(p: ^Form, x, y, w, h: int) -> ^TextBox
+@private tb_ctor:: proc(p: ^Control, x, y, w, h: i32, txt: string = "") -> ^TextBox
 {
     this:= new(TextBox)
-    init_control(this, p, x, y, w, h, .Text_Box, 
-                    COMM_CTRL_STYLES | TBSTYLE, TBEXSTYLE, 
-                    wcnEdit, TXTABLE, FONTABLE)
+    this.kind = .Text_Box
+    control_base_init(this, p, x, y, w, h, &_tbCount, txt)
+    this._createHandleProc = tb_create_handle
     this.hideSelection = true
-    this.backColor = app.clrWhite
-    this.foreColor = app.clrBlack
     this.focusRectColor = 0x007FFF
     this._frcRef = get_color_ref(this.focusRectColor)
-    this._fp_beforeCreation = cast(CreateDelegate) tb_before_creation
-    this._fp_afterCreation = cast(CreateDelegate) tb_after_creation
     return this
 }
 
-@private new_tb1:: proc(parent: ^Form) -> ^TextBox
+@private new_tb1:: proc(parent: ^Control) -> ^TextBox
 {
-    tb:= tb_ctor(parent, 10, 10, 180, 27)
-    if parent.createChilds do create_control(tb)
-    return tb
+    this := tb_ctor(parent, 10, 10, 180, 27)
+    if this._ownerForm.createChilds do create_control(this)
+    return this
 }
 
-@private new_tb2:: proc(parent: ^Form, x, y: int) -> ^TextBox
+@private new_tb2:: proc(parent: ^Control, x, y: i32) -> ^TextBox
 {
-    tb:= tb_ctor(parent, x, y, 180, 27)
-    if parent.createChilds do create_control(tb)
-    return tb
+    this := tb_ctor(parent, x, y, 180, 27)
+    if this._ownerForm.createChilds do create_control(this)
+    return this
 }
 
-@private new_tb3:: proc(parent: ^Form, x, y, w, h: int) -> ^TextBox
+@private new_tb3:: proc(parent: ^Control, x, y, w, h: i32) -> ^TextBox
 {
-    tb:= tb_ctor(parent, x, y, w, h)
-    if parent.createChilds do create_control(tb)
-    return tb
+    this := tb_ctor(parent, x, y, w, h)
+    ptf("tb wid: %d", w)
+    // if this._ownerForm.createChilds do create_control(this)
+    return this
 }
 
-@private new_tb4:: proc(parent: ^Form, txt: string, x, y: int) -> ^TextBox
+@private new_tb4:: proc(parent: ^Control, txt: string, x, y: i32) -> ^TextBox
 {
-    tb:= tb_ctor(parent, x, y, 180, 27)
-    tb.text = txt
-    tb._wtext = new_widestring(txt)
-    if parent.createChilds do create_control(tb)
-    return tb
+    this := tb_ctor(parent, x, y, 180, 27, txt)
+    if this._ownerForm.createChilds do create_control(this)
+    return this
 }
 
-@private new_tb5:: proc(parent: ^Form, txt: string, x, y, w, h: int) -> ^TextBox
+@private new_tb5:: proc(parent: ^Control, txt: string, x, y, w, h: i32) -> ^TextBox
 {
-    tb:= tb_ctor(parent, x, y, w, h)
-    tb.text = txt
-    if parent.createChilds do create_control(tb)
-    return tb
+    this := tb_ctor(parent, x, y, w, h, txt)
+    if this._ownerForm.createChilds do create_control(this)
+    return this
 }
 
-@private adjust_styles:: proc(tb: ^TextBox)
+@private tb_create_handle :: proc(ctl: ^Control)
 {
-    if tb.multiLine do tb._style |= ES_MULTILINE | ES_WANTRETURN
-    if !tb.hideSelection do tb._style |= ES_NOHIDESEL
-    if tb.readOnly do tb._style |= ES_READONLY
-
-    if tb.textCase == .Lower_Case { tb._style |= ES_LOWERCASE }
-    else if tb.textCase == .Upper_Case { tb._style |= ES_UPPERCASE }
-
-    if tb.textType == .Number_Only { tb._style |= ES_NUMBER }
-    else if tb.textType == .Password_Char { tb._style |= ES_PASSWORD }
-
-    if tb.textAlignment == .Center { tb._style |= ES_CENTER }
-    else if tb.textAlignment == .Right { tb._style |= ES_RIGHT }
-    tb._bkBrush = get_solid_brush(tb.backColor)
-}
-
-@private set_tb_bk_clr:: proc(tb: ^TextBox, clr: uint)
-{
-    tb.backColor = clr
-    if tb._isCreated do InvalidateRect(tb.handle, nil, false)
-}
-
-@private tb_before_creation:: proc(tb: ^TextBox) {adjust_styles(tb)}
-
-@private tb_after_creation:: proc(tb: ^TextBox)
-{
-    set_subclass(tb, tb_wnd_proc)
-    if len(tb.cueBanner) > 0 {
-        up:= cast(UINT_PTR) to_wstring(tb.cueBanner)
-        SendMessage(tb.handle, EM_SETCUEBANNER, 1, LPARAM(up) )
-        // free_all(context.temp_allocator)
+	this := cast(^TextBox)ctl
+	adjust_styles(this)	
+	create_control(ctl, this.width, this.height)
+	set_subclass(this, tb_wnd_proc)
+    if len(this.cueBanner) > 0 {
+        up:= cast(UINT_PTR) to_wstring(this.cueBanner)
+        SendMessage(this.handle, EM_SETCUEBANNER, 1, LPARAM(up) )
     }
-    api.EnableWindow(tb.handle, true)
+    api.EnableWindow(this.handle, true)	
+}
+
+@private adjust_styles:: proc(this: ^TextBox)
+{
+    if this.multiLine do this._style |= ES_MULTILINE | ES_WANTRETURN
+    if !this.hideSelection do this._style |= ES_NOHIDESEL
+    if this.readOnly do this._style |= ES_READONLY
+
+    if this.textCase == .Lower_Case { this._style |= ES_LOWERCASE }
+    else if this.textCase == .Upper_Case { this._style |= ES_UPPERCASE }
+
+    if this.textType == .Number_Only { this._style |= ES_NUMBER }
+    else if this.textType == .Password_Char { this._style |= ES_PASSWORD }
+
+    if this.textAlignment == .Center { this._style |= ES_CENTER }
+    else if this.textAlignment == .Right { this._style |= ES_RIGHT }
+    this._bkBrush = get_solid_brush(this.backColor)
+}
+
+@private set_tb_bk_clr:: proc(this: ^TextBox, clr: uint)
+{
+    this.backColor = clr
+    if this._isCreated do InvalidateRect(this.handle, nil, false)
 }
 
 @private textbox_property_setter:: proc(this: ^TextBox, prop: TextBoxProps, value: $T)
@@ -194,92 +186,91 @@ textbox_clear_all:: proc(tb: ^TextBox)
 	}
 }
 
-@private tb_finalize:: proc(this: ^TextBox, scid: UINT_PTR)
+@private tb_finalize:: proc(this: ^TextBox)
 {
     delete_gdi_object(this._bkBrush)
-    font_destroy(&this.font)
-    if this._wtext != nil do widestring_destroy(this._wtext)
-    RemoveWindowSubclass(this.handle, tb_wnd_proc, scid)
+    control_base_dtor(this)
     free(this)
 }
 
 @private tb_wnd_proc:: proc "stdcall" (hw: HWND, msg: u32, wp: WPARAM, lp: LPARAM, sc_id: UINT_PTR, ref_data: DWORD_PTR) -> LRESULT {
 
     context = global_context //
-    // context = runtime.default_context()
-    tb:= control_cast(TextBox, ref_data)
-    res := ctrl_common_msg_handler(tb, hw, msg, wp, lp) 
+    // display_msg(msg)
+    this := control_cast(TextBox, ref_data)
+    res := ctrl_common_msg_handler(this, hw, msg, wp, lp) 
     #partial switch res {
         case .Call_Def_Proc: return DefSubclassProc(hw, msg, wp, lp)
         case .Immediate_Return: return 1
     }
     switch msg {
     case WM_PAINT:
-        if tb.onPaint != nil {
+        if this.onPaint != nil {
             ps: PAINTSTRUCT
             hdc:= BeginPaint(hw, &ps)
             pea:= new_paint_event_args(&ps)
-            tb.onPaint(tb, &pea)
+            this.onPaint(this, &pea)
             EndPaint(hw, &ps)
             return 0
         }
 
     case CM_EDIT_COLOR:
         // print("ctl clr rcvd")
-        if tb.foreColor != def_fore_clr || tb.backColor != def_back_clr {
+        if this.foreColor != def_fore_clr || this.backColor != def_back_clr {
             dc_handle:= dir_cast(wp, HDC)
             // SetBkMode(dc_handle, Transparent)
-            if tb.foreColor != def_fore_clr do SetTextColor(dc_handle, get_color_ref(tb.foreColor))
-            SetBkColor(dc_handle, get_color_ref(tb.backColor))
-            // tb._bkBrush = CreateSolidBrush(get_color_ref(tb.backColor))
+            if this.foreColor != def_fore_clr do SetTextColor(dc_handle, get_color_ref(this.foreColor))
+            SetBkColor(dc_handle, get_color_ref(this.backColor))
+            // this._bkBrush = CreateSolidBrush(get_color_ref(this.backColor))
 
         } //else do return 0
 
-        return toLRES(tb._bkBrush)
+        return toLRES(this._bkBrush)
 
     case WM_SETFOCUS:
-        if tb.onGotFocus != nil {
+        if this.onGotFocus != nil {
             ea:= new_event_args()
-            tb.onGotFocus(tb, &ea)
+            this.onGotFocus(this, &ea)
         }
 
     case WM_KILLFOCUS:
-    //    tb._drawFocusRect = false
-        if tb.onLostFocus != nil {
+    //    this._drawFocusRect = false
+        if this.onLostFocus != nil {
             ea:= new_event_args()
-            tb.onLostFocus(tb, &ea)
+            this.onLostFocus(this, &ea)
         }
 
     case WM_KEYDOWN:
-        // tb._drawFocusRect = true
-        if tb.onKeyDown != nil {
+        // this._drawFocusRect = true
+        if this.onKeyDown != nil {
             kea:= new_key_event_args(wp)
-            tb.onKeyDown(tb, &kea)
+            this.onKeyDown(this, &kea)
             return 0
         }
 
     case WM_KEYUP:
-        if tb.onKeyUp != nil {
+        if this.onKeyUp != nil {
             kea:= new_key_event_args(wp)
-            tb.onKeyUp(tb, &kea)
+            this.onKeyUp(this, &kea)
             return 0
         }
 
     case WM_CHAR:
-        if tb.onKeyPress != nil {
+        if this.onKeyPress != nil {
             kea:= new_key_event_args(wp)
-            tb.onKeyPress(tb, &kea)
+            this.onKeyPress(this, &kea)
         }
-        SendMessage(tb.handle, CM_TBTXTCHANGED, 0, 0)
+        SendMessage(this.handle, CM_TBTXTCHANGED, 0, 0)
 
     case CM_TBTXTCHANGED:
-        if tb.onTextChanged != nil {
+        if this.onTextChanged != nil {
             ea:= new_event_args()
-            tb.onTextChanged(tb, &ea)
+            this.onTextChanged(this, &ea)
         }
 
-    case WM_DESTROY: 
-        tb_finalize(tb, sc_id)
+    case WM_NCDESTROY: 
+        RemoveWindowSubclass(this.handle, tb_wnd_proc, sc_id)
+        tb_finalize(this)
 
     // case: return DefSubclassProc(hw, msg, wp, lp)
     }

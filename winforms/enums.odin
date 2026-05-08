@@ -26,6 +26,8 @@ ControlKind :: enum
 	Tree_View,
 }
 
+BackColorMode :: enum u8 {None, Inherit_BGC, White_BGC}
+
 ButtonStyle :: enum {Default, Flat, Gradient,}
 ButtonDrawMode :: enum {Default, Text_Only, Bg_Only, Text_And_Bg, Gradient, Grad_And_Text}
 
@@ -212,7 +214,7 @@ BalloonIcon :: enum {None, Info, Warning, Error, Custom}
 
 //TreeView enums
 ChildData:: enum {Child_Auto = -2, Child_Callback = -1, Zero = 0, One = 1,}
-NodeOp:: enum {Add_Node, Insert_Node, Add_Child, Insert_Child,}
+NodeOpMode:: enum {Add_Node, Insert_Node, Add_Child, Insert_Child,}
 
 Status :: enum i32 {
     Ok                         = 0,

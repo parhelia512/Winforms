@@ -20,8 +20,8 @@ import "core:time"
 import api "core:sys/windows"
 
 transparent : i32 : 1
-_buttonCount : int
-wcnButton := L("Button")
+_buttonCount : int = 1
+
 
 
 Button :: struct
@@ -109,59 +109,51 @@ button_set_gradient_colors :: proc(btn : ^Button, clr1, clr2 : uint)
 	if gd.hotPen != nil do delete_gdi_object(gd.hotPen)
 }
 
-@private buttonCtor :: proc(p : ^Form, txt : string, x, y, w, h : int) -> ^Button
+@private buttonCtor :: proc(p : ^Control, txt : string, x, y, w, h : i32) -> ^Button
 {
 	context = global_context
-	_buttonCount += 1
 	this := new(Button, context.allocator)
-	init_control(this, p, x, y, w, h, .Button, COMM_CTRL_STYLES | BS_NOTIFY, 0, wcnButton, TXTABLE, FONTABLE)
-	this.text = txt == "" ? conc_num("Button_", _buttonCount) : txt
-	this._wtext = new_widestring(txt)
+	this.kind = .Button
+	control_base_init(this, p, x, y, w, h, &_buttonCount, txt)
+	this._createHandleProc = btn_create_handle
 	this._drawFlag = 0
-	this.foreColor = p.foreColor
-	this.backColor = p.backColor
-	this._fp_beforeCreation = cast(CreateDelegate) btn_before_creation
-	this._fp_afterCreation = cast(CreateDelegate) btn_after_creation
 	return this
 }
 
-@private new_button1 :: proc(parent : ^Form) -> ^Button
+@private new_button1 :: proc(parent : ^Control) -> ^Button
 {
-	btn := buttonCtor(parent, "", 10, 10, 120, 35)
-	if parent.createChilds do create_control(btn)
-	return btn
+	this := buttonCtor(parent, "", 10, 10, 120, 35)
+	if this._ownerForm.createChilds do create_control(this)
+	return this
 }
 
-@private new_button2 :: proc(parent : ^Form, txt : string) -> ^Button
+@private new_button2 :: proc(parent : ^Control, txt : string) -> ^Button
 {
-	btn := buttonCtor(parent, txt, 10, 10, 120, 35)
-	if parent.createChilds do create_control(btn)
-	return btn
+	this := buttonCtor(parent, txt, 10, 10, 120, 35)
+	if this._ownerForm.createChilds do create_control(this)
+	return this
 }
 
-@private new_button3 :: proc(parent : ^Form, txt : string, x, y : int) -> ^Button
+@private new_button3 :: proc(parent : ^Control, txt : string, x, y : i32) -> ^Button
 {
-	btn := buttonCtor(parent, txt, x, y, 120, 35)
-	if parent.createChilds do create_control(btn)
-	return btn
+	this := buttonCtor(parent, txt, x, y, 120, 35)
+	if this._ownerForm.createChilds do create_control(this)
+	return this
 }
 
-@private new_button4 :: proc(parent : ^Form, txt : string, x, y, w, h: int) -> ^Button
+@private new_button4 :: proc(parent : ^Control, txt : string, x, y, w, h: i32) -> ^Button
 {
-	btn := buttonCtor(parent, txt, x, y, w, h)
-	if parent.createChilds do create_control(btn)
-	return btn
+	this := buttonCtor(parent, txt, x, y, w, h)
+	if this._ownerForm.createChilds do create_control(this)
+	return this
 }
 
-@private btn_before_creation :: proc(b : ^Button) {if b._drawFlag > 0 do check_initial_color_change(b)}
-
-@private btn_after_creation :: proc(b : ^Button)
+@private btn_create_handle :: proc(ctl: ^Control)
 {
-	// if b._draw_mode != .Default && !b._addedInDrawList {
-	// 	append(&b.parent._cdraw_childs, b.handle)
-	// }
-	set_subclass(b, btn_wnd_proc)
-	// SetWindowSubclass(b.handle, btn_wnd_proc, UINT_PTR(globalSubClassID), 0)
+	this := cast(^Button)ctl
+	if this._drawFlag > 0 do check_initial_color_change(this)	
+	create_control(ctl, this.width, this.height)
+	set_subclass(this, btn_wnd_proc)	
 }
 
 @private check_initial_color_change :: proc(btn : ^Button)
@@ -287,14 +279,14 @@ button_set_gradient_colors :: proc(btn : ^Button, clr1, clr2 : uint)
 	return ret
 }
 
-@private btn_finalize :: proc(this: ^Button, hw: HWND, scid: UINT_PTR)
+@private btn_finalize :: proc(this: ^Button)
 {
 	switch this._drawFlag {
 		case 2, 3: flatDrawDtor(this._fdraw)
 		case 4, 5: gradDrawDtor(this._gdraw)
 	}
-	widestring_destroy(this._wtext)
-    font_destroy(&this.font)
+	control_base_dtor(this)
+	free(this,  context.allocator)
 }
 
 //mc : int = 1
@@ -302,50 +294,29 @@ button_set_gradient_colors :: proc(btn : ^Button, clr1, clr2 : uint)
 									sc_id : UINT_PTR, ref_data : DWORD_PTR) -> LRESULT
 {
 	context = global_context
-	btn := control_cast(Button, ref_data)
-	res := ctrl_common_msg_handler(btn, hw, msg, wp, lp) 
+	this := control_cast(Button, ref_data)
+	res := ctrl_common_msg_handler(this, hw, msg, wp, lp) 
     #partial switch res {
         case .Call_Def_Proc: return DefSubclassProc(hw, msg, wp, lp)
         case .Immediate_Return: return 1
     }
 	switch msg {
 		case WM_PAINT :			
-            if btn.onPaint != nil {
+            if this.onPaint != nil {
                 ps : PAINTSTRUCT
                 hdc := BeginPaint(hw, &ps)
                 pea := new_paint_event_args(&ps)
-                btn.onPaint(btn, &pea)
+                this.onPaint(this, &pea)
                 EndPaint(hw, &ps)
                 return 0
             }
 
-		// case WM_SETFOCUS:
-		// 	
-        //     if btn.onGotFocus != nil {
-        //         ea := new_event_args()
-        //         btn.onGotFocus(btn, &ea)
-        //         return 0
-        //     }
-
-        // case WM_KILLFOCUS:
-        //     //btn._draw_focus_rct = false
-		// 	
-        //     if btn.onLostFocus != nil {
-        //         ea := new_event_args()
-        //         btn.onLostFocus(btn, &ea)
-        //         return 0
-        //     }
-		// 	return 0  // Avoid this if you want to show the focus rectangle (....)
-
-
-
 		case CM_NOTIFY:			
-			return btn_wmnotify_handler(btn, lp)
+			return btn_wmnotify_handler(this, lp)
 
-		case WM_DESTROY:			
-			btn_finalize(btn, hw, sc_id)
-			free(btn,  context.allocator)
-			RemoveWindowSubclass(hw, btn_wnd_proc, sc_id)		
+		case WM_NCDESTROY:			
+			RemoveWindowSubclass(this.handle, btn_wnd_proc, sc_id)
+			btn_finalize(this)					
 
 		case : return DefSubclassProc(hw, msg, wp, lp)
 	}

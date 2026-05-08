@@ -74,7 +74,7 @@ msgform_start_listening :: proc(this: ^MessageForm)
         TranslateMessage(&ms)
         DispatchMessage(&ms)
     }
-    app_finalize(app)
+    app_finalize()
 }
 
 msgform_close :: proc(this: ^MessageForm)

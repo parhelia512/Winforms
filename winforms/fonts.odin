@@ -13,6 +13,7 @@ Font :: struct
 	italics : bool,
 	handle : HFONT,
 	_defFontChanged : bool,
+	_isOwner: bool,
 	// _wtext: ^WideString,
 }
 
@@ -37,7 +38,7 @@ new_font_2 :: proc(fname : string , fs : int, fw : FontWeight = .Normal,
 
 new_font :: proc {new_font_1, new_font_2} // Overloaded proc
 
-@private font_fill_logfont :: proc(this : ^Font, plf: ^LOGFONT) 
+@private font_fill_logfont :: proc(this : ^Font, plf: ^LOGFONT, id: int = 0) 
 {
 	iHeight : i32 = MulDiv(i32(this.size), i32(app.sysDPI), 72)		
 	widestring_fill_buffer(plf.lfFaceName[:], this.name)
@@ -50,40 +51,56 @@ new_font :: proc {new_font_1, new_font_2} // Overloaded proc
 	plf.lfClipPrecision = CLIP_DEFAULT_PRECIS
 	plf.lfQuality = DEFAULT_QUALITY
 	plf.lfPitchAndFamily = DEFAULT_PITCH
+	// ptf("id: %d, plf.height: %d", id, plf.lfHeight)
 }
 
 font_create_handle :: proc(this: ^Font, usePrimary: b32 = false) {
 	lf : LOGFONT
-	plf : ^LOGFONT = &app.lfont if usePrimary else &lf
+	plf : ^LOGFONT = &app.primaryFont if usePrimary else &lf
 	if !usePrimary {
 		font_fill_logfont(this, plf)
 	} else {
-		if this.handle != nil do delete_gdi_object(this.handle)
+		if this.handle != nil {
+			delete_gdi_object(this.handle)
+		}
 	}	
 	this.handle = CreateFontIndirect(plf)
+	this._isOwner = true
 }
 
-@private font_clone_handle :: proc(this: ^Font, srcHandle: HFONT) {
+@private font_create_primary_handle :: proc() {
+	font_fill_logfont(&app.font, &app.primaryFont)
+	app.font.handle = CreateFontIndirect(&app.primaryFont)
+	app.font._isOwner = true	
+}
+
+@private font_clone_handle :: proc(this: ^Font, srcHandle: HFONT, usePrimary: b32 = false) {
 	if srcHandle != nil {
-		lf : LOGFONT
-        x := api.GetObjectW(HANDLE(srcHandle), size_of(lf), cast(LPVOID)&lf)
-        if x > 0 {
-			this.handle = CreateFontIndirect(&lf)
+		lf : LOGFONT = usePrimary ? app.primaryFont : LOGFONT{}
+		if !usePrimary {
+			x := api.GetObjectW(HANDLE(srcHandle), size_of(lf), cast(LPVOID)&lf)
+			if x > 0 {
+				this.handle = CreateFontIndirect(&lf)
+				this._isOwner = true
+			} else {
+				ptf("Proc: font_clone_handle, Error : %d", GetLastError())
+			}
 		} else {
-			ptf("Proc: font_clone_handle, Error : %d", GetLastError())
-		}
+			this.handle = app.font.handle
+			this._isOwner = false
+		}        
 	}
 }
 
 font_clone_parent_handle :: proc(this: ^Font, pHandle: HFONT) {
 	if pHandle == nil {
-        this.handle = CreateFontIndirect(&app.lfont)
+        this.handle = CreateFontIndirect(&app.primaryFont)
 	} else {
         font_clone_handle(this, pHandle)
 	}
 }
 
-font_clone :: proc(src: ^Font, dst: ^Font, id : int = 0)
+font_clone :: proc(src: ^Font, dst: ^Font, usePrimary: b32 = false)
 {
 	dst.name = src.name
 	dst.size = src.size
@@ -91,7 +108,7 @@ font_clone :: proc(src: ^Font, dst: ^Font, id : int = 0)
 	dst.underline = src.underline
 	dst.italics = src.italics
 	dst._defFontChanged = src._defFontChanged	
-	font_clone_handle(dst, src.handle)
+	font_clone_handle(dst, src.handle, usePrimary)
 }	
 
 font_change_font :: proc(this: ^Font, fname : string , fs : int, fw : FontWeight = .Normal)
@@ -108,7 +125,7 @@ font_change_font :: proc(this: ^Font, fname : string , fs : int, fw : FontWeight
 
 font_destroy :: #force_inline proc(this: ^Font,id: int = 0)
 {
-	if this.handle != nil {
+	if this.handle != nil && this._isOwner {
 		// ptf("deleting font %s", this.name)
 		delete_gdi_object(this.handle)
 		this.handle = nil

@@ -26,7 +26,7 @@
 package winforms
 import "base:runtime"
 
-wcnCalendar:= L("SysMonthCal32")
+_calCounter: int = 1
 
 Calendar:: struct
 {
@@ -52,7 +52,7 @@ new_calendar:: proc{new_cal1, new_cal2}
 
 
 //===================================================Private functions=============================================
-@private calendar_ctor:: proc(p: ^Form, x, y: int) -> ^Calendar
+@private calendar_ctor:: proc(p: ^Control, x, y: i32) -> ^Calendar
 {
     if !isDtpClassInit { // Then we need to initialize the date class control.
         isDtpClassInit = true
@@ -61,24 +61,35 @@ new_calendar:: proc{new_cal1, new_cal2}
     }
 
     this:= new(Calendar)
-    init_control(this, p, x, y, 0, 0, .Calendar, COMM_CTRL_STYLES, 0, wcnCalendar, NO_TXT, NO_FONT)
-    this._fp_beforeCreation = cast(CreateDelegate) cal_before_creation
-	this._fp_afterCreation = cast(CreateDelegate) cal_after_creation
+    this.kind = .Calendar
+    control_base_init(this, p, x, y, 0, 0, &_calCounter)
+    this._createHandleProc = cal_create_handle
     return this
 }
 
-@private new_cal1:: proc(parent: ^Form, x, y: int) -> ^Calendar
+@private new_cal1:: proc(parent: ^Control, x, y: i32) -> ^Calendar
 {
-    c:= calendar_ctor(parent, x, y)
-    if parent.createChilds do create_control(c)
-    return c
+    this := calendar_ctor(parent, x, y)
+    if this._ownerForm.createChilds do create_control(this)
+    return this
 }
 
-@private new_cal2:: proc(parent: ^Form) -> ^Calendar
+@private new_cal2:: proc(parent: ^Control) -> ^Calendar
 {
-    c:= calendar_ctor(parent, 10, 10)
-    if parent.createChilds do create_control(c)
-    return c
+    this:= calendar_ctor(parent, 10, 10)
+    if this._ownerForm.createChilds do create_control(this)
+    return this
+}
+
+@private cal_create_handle :: proc(ctl: ^Control)
+{
+	this := cast(^Calendar)ctl
+    set_cal_style(this)
+	create_control(ctl, this.width, this.height)
+	set_subclass(this, cal_wnd_proc)
+    rc: RECT
+    SendMessage(this.handle, MCM_GETMINREQRECT, 0, convert_to(LPARAM, &rc))
+    SetWindowPos(this.handle, nil, i32(this.xpos), i32(this.ypos), rc.right, rc.bottom, SWP_NOZORDER)
 }
 
 @private set_cal_style:: proc(c: ^Calendar)
@@ -88,19 +99,6 @@ new_calendar:: proc{new_cal1, new_cal2}
     if c.noToday do c._style |= MCS_NOTODAY
     if c.noTrailingDates do c._style |= MCS_NOTRAILINGDATES
     if c.shortDayNames do c._style |= MCS_SHORTDAYSOFWEEK
-}
-
-@private cal_before_creation:: proc(c: ^Calendar)
-{
-    set_cal_style(c)
-}
-
-@private cal_after_creation:: proc(cal: ^Calendar)
-{
-    set_subclass(cal, cal_wnd_proc)
-    rc: RECT
-    SendMessage(cal.handle, MCM_GETMINREQRECT, 0, convert_to(LPARAM, &rc))
-    SetWindowPos(cal.handle, nil, i32(cal.xpos), i32(cal.ypos), rc.right, rc.bottom, SWP_NOZORDER)
 }
 
 @private calendar_property_setter:: proc(this: ^Calendar, prop: CalendarProps, value: $T)
@@ -130,11 +128,10 @@ new_calendar:: proc{new_cal1, new_cal2}
 }
 
 
-@private cal_finalize:: proc(this: ^Calendar, scid: UINT_PTR)
+@private cal_finalize:: proc(this: ^Calendar)
 {
-    RemoveWindowSubclass(this.handle, cal_wnd_proc, scid)
-    font_destroy(&this.font)
-    free(this)
+    control_base_dtor(this)
+	free(this,  context.allocator)
 }
 
 @private cal_wnd_proc:: proc "stdcall" (hw: HWND, msg: u32, wp: WPARAM, lp: LPARAM,
@@ -142,19 +139,19 @@ new_calendar:: proc{new_cal1, new_cal2}
 {
     context = global_context    
    //display_msg(msg)
-    cal:= control_cast(Calendar, ref_data)
-    res := ctrl_common_msg_handler(cal, hw, msg, wp, lp) 
+    this := control_cast(Calendar, ref_data)
+    res := ctrl_common_msg_handler(this, hw, msg, wp, lp) 
     #partial switch res {
         case .Call_Def_Proc: return DefSubclassProc(hw, msg, wp, lp)
         case .Immediate_Return: return 1 
     }
         switch msg {
         case WM_PAINT:            
-            if cal.onPaint != nil {
+            if this.onPaint != nil {
                 ps: PAINTSTRUCT
                 hdc:= BeginPaint(hw, &ps)
                 pea:= new_paint_event_args(&ps)
-                cal.onPaint(cal, &pea)
+                this.onPaint(this, &pea)
                 EndPaint(hw, &ps)
                 return 0
             }
@@ -165,32 +162,33 @@ new_calendar:: proc{new_cal1, new_cal2}
             switch nm.code {
                 case MCN_SELECT:
                     nms:= dir_cast(lp, ^NMSELCHANGE)
-                    cal.value = systime_to_datetime(nms.stSelStart)
-                    if cal.onValueChanged != nil {
+                    this.value = systime_to_datetime(nms.stSelStart)
+                    if this.onValueChanged != nil {
                         ea:= new_event_args()
-                        cal.onValueChanged(cal, &ea)
+                        this.onValueChanged(this, &ea)
                     }
 
                 case MCN_SELCHANGE:
                     nms:= dir_cast(lp, ^NMSELCHANGE)
-                    cal.value = systime_to_datetime(nms.stSelStart)
-                    if cal.onSelectionChanged != nil {
+                    this.value = systime_to_datetime(nms.stSelStart)
+                    if this.onSelectionChanged != nil {
                         ea:= new_event_args()
-                        cal.onSelectionChanged(cal, &ea)
+                        this.onSelectionChanged(this, &ea)
                     }
 
                 case MCN_VIEWCHANGE:
                     nmv:= dir_cast(lp, ^NMVIEWCHANGE)
-                    cal.viewMode = ViewMode(nmv.dwNewView)
-                    cal.oldView = ViewMode(nmv.dwOldView)
-                    if cal.onViewChanged != nil {
+                    this.viewMode = ViewMode(nmv.dwNewView)
+                    this.oldView = ViewMode(nmv.dwOldView)
+                    if this.onViewChanged != nil {
                         ea:= new_event_args()
-                        cal.onViewChanged(cal, &ea)
+                        this.onViewChanged(this, &ea)
                     }
             }      
             
-        case WM_DESTROY: 
-            cal_finalize(cal, sc_id)
+        case WM_NCDESTROY: 
+            RemoveWindowSubclass(this.handle, cal_wnd_proc, sc_id)
+            cal_finalize(this)
 
         case:
         return DefSubclassProc(hw, msg, wp, lp)
