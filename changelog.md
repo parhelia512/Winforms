@@ -1,6 +1,11 @@
 
 Winforms changelog
 
+v1.1.206 (15-May-2026)
+    Improved NumberPicker border drawing
+    Added onHandleCreated event for all controls
+    GroupBox is now a parent control. It is no more transparent to mouse events.
+
 v1.0.206 (15-Apr-2026)
     Fixed bug in mouse hover event.
 
