@@ -105,33 +105,31 @@ Form :: struct
 new_form :: proc{new_form1, new_form2}
 
 // Users can call 'create_handle()' instead of this.
-create_form :: proc(this : ^Form )
+@private create_form_handle :: proc(this : ^Form )
 {
-    // if app.mainHandle == nil {}
-    if this.backColor != def_window_color && this._drawMode != .Gradient do this._drawMode = .Flat_Color
+    if this.backColor != def_window_color && this._drawMode != .Gradient {
+        this._drawMode = .Flat_Color
+    }
     set_start_position(this)
     set_form_style(this)
     this.handle = CreateWindowEx(this._exStyle, wcnForm,
                                 to_wstring(this.text), this._style,
-                                i32(this.xpos), i32(this.ypos),
-                                i32(this.width), i32(this.height),
+                                this.xpos, this.ypos,
+                                this.width, this.height,
                                 nil, nil, app.hInstance, this )
-    if this.handle == nil {
-        fmt.println("Error in CreateWindowEx,", GetLastError()) }
-    else {
-        // app.winMap[this.handle] = this
+    if this.handle != nil {        
         this._isCreated = true
         app.formCount += 1
         if app.mainHandle == nil {
             app.mainHandle = this.handle
             app.startState = this.windowState
         }
-        // set_form_font_internal(this)
-        if this.font.handle == nil do font_create_handle(&this.font, true) // True means use primary font LOGFONT in app. It is already created in app_start() proc.
-        // SetWindowLongPtr(this.handle, GWLP_USERDATA, cast(LONG_PTR) cast(UINT_PTR) this)
-        // ShowWindow(app.mainHandle, cast(i32) app.startState )
+        if this.font.handle == nil {
+            font_create_handle(&this.font, true) // True means use primary font LOGFONT in 
+        }
+    } else {
+        fmt.println("Error in CreateWindowEx,", GetLastError()) 
     }
-    // free_all(context.temp_allocator)
 }
 
 // Print the mouse coordinates where it clicked
@@ -155,13 +153,14 @@ form_set_gradient :: proc(this: ^Form, clr1, clr2 : uint,top_bottom := true)
 // Start the main loop and display the form
 start_mainloop :: proc(this: ^Form)
 {
+    create_form_handle(this)
+    if this.onHandleCreated != nil do this.onHandleCreated(this, &gea)
     create_child_handles(this)
     
     ShowWindow(app.mainHandle, cast(i32) app.startState )
     UpdateWindow(this.handle)
     ms : MSG
-    for GetMessage(&ms, nil, 0, 0) != 0
-    {
+    for GetMessage(&ms, nil, 0, 0) != 0 {
         TranslateMessage(&ms)
         DispatchMessage(&ms)
     }

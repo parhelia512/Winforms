@@ -397,7 +397,7 @@ Test :: proc()
 create_handle :: proc(ctl : ^$T)
 {
 	when T == Form {
-		create_form(ctl)
+		create_form_handle(ctl)
 	} else {
 		create_control(ctl, this.width, this.height)
 	}

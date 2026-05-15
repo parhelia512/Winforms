@@ -1,6 +1,13 @@
 
 Winforms changelog
 
+v1.1.207 (15-May-2026)
+    Eliminated the need to call create_handle for Form.
+    Added onHandleCreated event for Form.
+    Fine tuned NumberPicker border drawing.
+
+
+
 v1.1.206 (08-May-2026)
     Improved NumberPicker border drawing
     Added onHandleCreated event for all controls

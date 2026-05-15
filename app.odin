@@ -33,7 +33,7 @@ MakeWindow :: proc()
     // frm.font = new_font("Tahoma", 13)
     print_points(frm)
     frm.start_pos = .Center //.Mid_Right
-    create_handle(frm)
+    // create_handle(frm)
     // frm.createChilds = true
 
 
@@ -97,7 +97,7 @@ MakeWindow :: proc()
 
     // set_property(lb1, CommonProps.Back_Color, 0xddAA45)
     // np1 = new_numberpicker(frm, cright(lb1) + 15, gby(gb, 35), deciPrec = 2, step = 1.5)
-    np1 = new_numberpicker(gb, 100, 37, 80, 30, deciPrec = 2, step = 1.5)
+    np1 = new_numberpicker(gb, 100, 37, 80, 27, deciPrec = 2, step = 1.5)
 
     // np1.foreColor = 0x9d0208
     np1.backColor = 0xddAA45 
@@ -122,7 +122,7 @@ MakeWindow :: proc()
     rb1.foreColor = 0xd90429
     rb2 := new_radiobutton(gb2, "SubSystem:Console", 15, 100)
     lb2 := new_label(gb2, "Threads:", 10, 140)
-    np2 := new_numberpicker(gb2, 80, 140, 80, 28, btnLeft = true)
+    np2 := new_numberpicker(gb2, 80, 140, 80, 27, btnLeft = true)
     np2.backColor = 0xcaffbf
     np2.textAlignment = .Center
 

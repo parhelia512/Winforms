@@ -357,13 +357,13 @@ control_set_position :: proc(ctl : ^Control, x, y : i32)
 	mx : i32 = ctl.xpos if x == 0 else x
 	my : i32 = ctl.ypos if y == 0 else y
 	
-	if ctl.kind == .Number_Picker {
-		np := cast(^NumberPicker)ctl
-		nump_set_pos(np, mx, my)
+	// if ctl.kind == .Number_Picker {
+	// 	np := cast(^NumberPicker)ctl
+	// 	nump_set_pos(np, mx, my)
 		
-	} else {
-		SetWindowPos(ctl.handle, nil, mx, my, 0, 0, SWP_NOSIZE | SWP_NOZORDER)
-	}
+	// } else {
+	// 	SetWindowPos(ctl.handle, nil, mx, my, 0, 0, SWP_NOSIZE | SWP_NOZORDER)
+	// }
 	
 }
 

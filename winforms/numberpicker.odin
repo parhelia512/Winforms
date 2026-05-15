@@ -67,9 +67,8 @@ NumberPicker :: struct
     _buddySubclsID : int,
     _buddyWinProc : SUBCLASSPROC,
     _bkBrush : HBRUSH,
-    _borderBrush : HBRUSH,
     _borderPen : HPEN,
-    _tbrc : RECT,
+    _tbwrc : RECT,
     _udrc : RECT,
     _myrc : RECT,
     _borderPts : [4]POINT,
@@ -79,7 +78,6 @@ NumberPicker :: struct
     _botEdgeFlag : DWORD,
     _txtPos : SimpleTextAlignment,
     _bgcRef : COLORREF,
-    _lineX : i32,
     _hoverTriggered: bool,
     _hoverTimer : ^Timer,
      _lastMpos: POINT,
@@ -192,34 +190,6 @@ numberpicker_set_decimal_precision :: proc(this: ^NumberPicker, value: int)
 	np_after_creation(this)	
 }
 
-@private nump_set_pos :: proc(np : ^NumberPicker, x, y : i32)
-{
-    np.xpos = x
-    np.ypos = y
-    ptf("tbrc: %d, %d, %d, %d", np._tbrc.left, np._tbrc.top, np._tbrc.right, np._tbrc.bottom)
-    ptf("udrc: %d, %d, %d, %d", np._udrc.left, np._udrc.top, np._udrc.right, np._udrc.bottom)
-    SetWindowPos(np._buddyHandle, nil, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER)
-    SendMessage(np.handle, UDM_SETBUDDY, WPARAM(np._buddyHandle), 0)
-    
-    // if np.buttonOnLeft {        
-    //     SetWindowPos(np.handle, nil, i32(x), i32(y), 0, 0, SWP_NOSIZE | SWP_NOZORDER)
-    //     GetClientRect(np.handle, &np._udrc)
-    //     buddyx := x + int(np._udrc.right) + 1
-    //     SetWindowPos(np._buddyHandle, nil, i32(buddyx), i32(y), 0, 0, SWP_NOSIZE | SWP_NOZORDER)
-    // } else {
-    //     // ptf("tbrc right1: %d", np._tbrc.right)
-    //     SetWindowPos(np._buddyHandle, nil, i32(x), i32(y), 0, 0, SWP_NOSIZE | SWP_NOZORDER)
-    //     // GetClientRect(np.handle, &np._tbrc)
-    //     udx := x + int(np._udrc.right) + 40 
-    //     ptf("Setting nump pos: %d, %d, udx: %d", x, y, udx)
-    //     ptf("tbrc right2: %d", np._tbrc.right)
-    //     SetWindowPos(np.handle, nil, i32(udx), i32(y), 0, 0, SWP_NOSIZE | SWP_NOZORDER)
-    //     GetClientRect(np.handle, &np._udrc)
-    //     ptf("udrc: %d, %d, %d, %d", np._udrc.left, np._udrc.top, np._udrc.right, np._udrc.bottom)
-    // }
-    // SetRect(&np._myrc, i32(np.xpos), i32(np.ypos), i32(np.xpos + np.width), i32(np.ypos + np.height))
-}
-
 @private set_np_styles :: proc(this : ^NumberPicker)
 {
     if this.buttonOnLeft {
@@ -238,7 +208,6 @@ numberpicker_set_decimal_precision :: proc(this: ^NumberPicker, value: int)
         case .Right : this._buddyStyle |= ES_RIGHT
     }
     // clr : Color = new_color(0xB4B4B4) //(0xABABAB) // Gray color for edit control border
-    // this._borderBrush = CreateSolidBrush(clr.ref) 
     // this._borderPen = CreatePen(PS_SOLID, 1, get_color_ref(0xffffff))
 }
 
@@ -316,54 +285,25 @@ numberpicker_set_decimal_precision :: proc(this: ^NumberPicker, value: int)
      * There is no magic in it. We just create a big RECT. It can comprise the edit & updown.
      * So, we will map the mouse points into parent's client rect size. Then we will
      * check if those points are inside our big rect. If yes, mouse is on us. Otherwise mouse leaved. */
-    this._tbrc = get_rect(this._buddyHandle) // Textbox rect
-    this._udrc = get_rect(this.handle) // Updown btn rect
+    this._tbwrc = get_win_rect(this._buddyHandle) // buddy edit window rect
+    OffsetRect(&this._tbwrc, -this._tbwrc.left, -this._tbwrc.top)
+    this._udrc = get_rect(this.handle) // Arrow btn client rect
     
     /* We need to draw a border on 3 sides of our buddy control.
      * So we are preparing the pen and rect here. We will update
      * the rect when control get resized or moved..............*/ 
     this._borderPen = CreatePen(PS_SOLID, 2, get_color_ref(0xB4B4B4))
     if this.buttonOnLeft {  // ⊐
-        this._borderPts[0].x = 0 
-        this._borderPts[0].y = 0    // Top-left
-
-        this._borderPts[1].x = this._tbrc.right + 2
-        this._borderPts[1].y = 0    // Top-right
-
-        this._borderPts[2].x = this._tbrc.right + 2
-        this._borderPts[2].y = this._tbrc.bottom + 1  // Bottom-right
-
-        this._borderPts[3].x = 0
-        this._borderPts[3].y = this._tbrc.bottom + 1 // Bottom-left
+        this._borderPts[1].x = this._tbwrc.right
+        this._borderPts[2].x = this._tbwrc.right
+        this._borderPts[2].y = this._tbwrc.bottom
+        this._borderPts[3].y = this._tbwrc.bottom
 
     } else {  // ⊏
-        this._borderPts[0].x = this._tbrc.right + 2
-        this._borderPts[0].y = 0    // Top-Right
-
-        this._borderPts[1].x = 0
-        this._borderPts[1].y = 0         // Top-Left
-
-        this._borderPts[2].x = 0
-        this._borderPts[2].y = this._tbrc.bottom + 1 // Bottom-Left
-
-        this._borderPts[3].x = this._tbrc.right + 2
-        this._borderPts[3].y = this._tbrc.bottom + 1 // Bottom-Right
-    }
-}
-
-@private resize_buddy :: proc(np : ^NumberPicker)
-{
-    // Here we are adjusting the edit control near to updown control.
-    if np.buttonOnLeft {
-        // GetClientRect(np.handle, &np._udrc)
-        // SetWindowPos(np._buddyHandle, nil, i32(np.xpos) + np._udrc.right, i32(np.ypos), np._tbrc.right, np._tbrc.bottom, swp_flag)
-        np._lineX = np._tbrc.left
-        // print("307")
-    } else {
-        // GetClientRect(np.handle, &np._tbrc)
-        // SetWindowPos(np._buddyHandle, nil, i32(np.xpos), i32(np.ypos), np._tbrc.right - 2, np._tbrc.bottom, swp_flag)
-        np._lineX = np._tbrc.right - 2
-        // print("312")
+        this._borderPts[0].x = this._tbwrc.right
+        this._borderPts[2].y = this._tbwrc.bottom
+        this._borderPts[3].x = this._tbwrc.right
+        this._borderPts[3].y = this._tbwrc.bottom
     }
 }
 
@@ -373,22 +313,9 @@ numberpicker_set_decimal_precision :: proc(this: ^NumberPicker, value: int)
     SendMessage(np._buddyHandle, EM_SETSEL, WPARAM(wpm), 0)
 }
 
-// @private np_before_creation :: proc(np : ^NumberPicker)
-// {
-//     if !is_np_inited {
-//         icex : INITCOMMONCONTROLSEX
-//         icex.dwSize = size_of(icex)
-//         icex.dwIcc = ICC_UPDOWN_CLASS
-//         InitCommonControlsEx(&icex)
-//         is_np_inited = true
-//     }
-//     set_np_styles(np)
-//     np._bgcRef = get_color_ref(np.backColor)
-// }
 
 @private np_after_creation :: proc(this : ^NumberPicker)
-{
-    
+{    
     ctl_id : UINT= globalCtlID // Use global control ID & update it.
     globalCtlID += 1
     this._buddyHandle = CreateWindowEx( this._buddyExStyle,
@@ -406,9 +333,6 @@ numberpicker_set_decimal_precision :: proc(this: ^NumberPicker, value: int)
 
     
     if this.handle != nil && this._buddyHandle != nil {
-        
-        // this._bkBrush = CreateSolidBrush(get_color_ref(this.backColor))
-        // HWND oldBuddy = HWND(SendMessage(this.handle, UDM_SETBUDDY, convert_to(WPARAM, this._buddyHandle), 0))
         set_np_subclass(this, np_wnd_proc, buddy_wnd_proc)
         if this.font.handle != this.parent.font.handle || this.font.handle == nil {
             font_create_handle(&this.font)
@@ -420,9 +344,6 @@ numberpicker_set_decimal_precision :: proc(this: ^NumberPicker, value: int)
         SendMessage(this.handle, UDM_SETRANGE32, WPARAM(this.minRange), LPARAM(this.maxRange))
 
         set_rects_and_size(this)
-        // ptf("tbrc: %d, %d, %d, %d", this._tbrc.left, this._tbrc.top, this._tbrc.right, this._tbrc.bottom)
-        resize_buddy(this)
-        // if oldBuddy != nil do SendMessage(oldBuddy, CM_BUDDY_RESIZE, 0, 0)
         SetRect(&this._myrc, this.xpos, this.ypos, this.xpos + this.width, this.ypos + this.height)
         np_display_value_internal(this)
     }
@@ -478,44 +399,6 @@ numberpicker_set_decimal_precision :: proc(this: ^NumberPicker, value: int)
         case .Track_Mouse_Leave: break
         case .Step: break
     }
-}
-
-@private np_paint_buddy_border :: proc(this: ^NumberPicker, hdc: HDC)
-{
-    /*======================================================================
-    Edit control needs WS_BORDER style to place the text properly aligned.
-	But if we use that style, it will draw a border on 4 sides of the edit.
-	That will separate our updown control and edit control into two parts.
-	And that's ugly. So we need to erase all the borders. But it is tricky.	
-	First, we will draw a frame over the current border with updown's border color.
-	Then, we will erase the right/left side border by drawing a line.
-	This line has the same back color of edit control. So the border is hidden. 
-	And the control will look like the one in .NET.  
-    ===========================================================================*/
-    // this._tbrc.right -= 1
-    // FrameRect(hdc, &this._tbrc, this._borderBrush)
-    
-    // DrawEdge(hdc, &this._tbrc, BDR_SUNKENOUTER, BF_LEFT | BF_TOP | BF_BOTTOM);
-
-    
-    bclr := get_color_ref(0xB4B4B4)
-    hPen := CreatePen(PS_SOLID, 2, bclr)
-    defer delete_gdi_object(hPen)
-    hOldPen := SelectObject(hdc, HGDIOBJ(hPen))
-    pts : [4]POINT
-    
-    
-    Polyline(hdc, &pts[0], 4)
-
-    // fpen: HPEN = CreatePen(PS_SOLID, 2, get_color_ref(0xFFFFFF)) // Same as edit control's back color
-    // defer delete_gdi_object(fpen)
-
-
-    hOldObj := SelectObject(hdc, HGDIOBJ(uintptr(this._borderPen) ))
-    MoveToEx(hdc, this._lineX, 1, nil)
-    LineTo(hdc, this._lineX, this._tbrc.bottom - 1)
-    SelectObject(hdc, hOldObj)
-
 }
 
 // Special subclassing for NumberPicker control. Remove_subclass is written in dtor
@@ -584,8 +467,7 @@ numberpicker_set_decimal_precision :: proc(this: ^NumberPicker, value: int)
 
 @private np_finalize :: proc(this: ^NumberPicker)
 {
-    delete_gdi_object(this._bkBrush)
-    delete_gdi_object(this._borderBrush)   
+    delete_gdi_object(this._bkBrush)   
     delete_gdi_object(this._borderPen) 
     if SpecialMouseEvents.Mouse_Hover in this._mouseEvents {
         timer_dtor(this._hoverTimer)      
@@ -706,6 +588,7 @@ numberpicker_set_decimal_precision :: proc(this: ^NumberPicker, value: int)
             if hdc != nil {        
                 hOldPen := SelectObject(hdc, HGDIOBJ(this._borderPen))        
                 Polyline(hdc, &this._borderPts[0], 4)
+                SelectObject(hdc, hOldPen)
             }
             return 0
 
