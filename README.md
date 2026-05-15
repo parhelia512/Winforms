@@ -46,8 +46,7 @@ MakeWindow :: proc()
     frm.width = 1100
     frm.height = 500
     frm.font = new_font("Tahoma", 13)
-    print_points(frm)    
-    create_handle(frm)
+    print_points(frm) // Handy to know the points in design time.
     
     // Let's create a tray icon.
     ti = new_tray_icon("Winforms tray icon!", "winforms-icon.ico")
