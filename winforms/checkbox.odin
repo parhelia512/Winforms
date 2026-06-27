@@ -158,8 +158,6 @@ new_checkbox:: proc{new_checkbox1, new_checkbox2}
         case CM_NOTIFY:
             nmcd:= dir_cast(lp, ^NMCUSTOMDRAW)
             switch nmcd.dwDrawStage {
-                case CDDS_PREERASE:
-                    return CDRF_NOTIFYPOSTERASE
                 case CDDS_PREPAINT:
                     cref:= get_color_ref(this.foreColor)
                     rct: RECT = nmcd.rc

@@ -127,6 +127,7 @@ new_form :: proc{new_form1, new_form2}
         if this.font.handle == nil {
             font_create_handle(&this.font, true) // True means use primary font LOGFONT in 
         }
+        ptf("form size: %d", size_of(Form))
     } else {
         fmt.println("Error in CreateWindowEx,", GetLastError()) 
     }
@@ -448,7 +449,7 @@ window_proc :: proc "stdcall" (hw : HWND, msg : u32, wp : WPARAM, lp : LPARAM ) 
             frm = cast(^Form) cs.lpCreateParams            
             frm.handle = hw
             SetWindowLongPtr(hw, GWLP_USERDATA, cast(LONG_PTR) cast(UINT_PTR) frm)            
-            return 1 // Continue window creation
+            
         }
         // Messages before NCCREATE (rare) must go to default
         return DefWindowProc(hw, msg, wp, lp)

@@ -178,8 +178,6 @@ button_set_gradient_colors :: proc(btn : ^Button, clr1, clr2 : uint)
 {
 	switch nmcd.dwDrawStage
 	{
-		case CDDS_PREERASE:	// Note: This return value is critical. Otherwise we don't get below notifications.
-			return  CDRF_NOTIFYPOSTERASE
 		case CDDS_PREPAINT:
 			// We need to change color when user clicks the button with  mouse.
 			// But that is only working when we write code in pre-paint stage.
@@ -226,8 +224,6 @@ button_set_gradient_colors :: proc(btn : ^Button, clr1, clr2 : uint)
 {
 	switch nmcd.dwDrawStage
 	{
-		case CDDS_PREERASE:	// Note: This return value is critical. Otherwise we don't get below notifications.
-			return  CDRF_NOTIFYPOSTERASE
 		case CDDS_PREPAINT:
 			//draw_frame_gr(nmcd.hdc, nmcd.rc, btn._gradient_color.color1, -1, 1)
 			if (nmcd.uItemState & MOUSE_CLICKED) == MOUSE_CLICKED

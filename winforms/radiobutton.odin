@@ -207,8 +207,6 @@ radiobutton_set_autocheck:: proc(rb: ^RadioButton, auto_check: bool )
     case CM_NOTIFY:
         nmcd:= dir_cast(lp, ^NMCUSTOMDRAW)
         switch nmcd.dwDrawStage {
-        case CDDS_PREERASE:
-            return CDRF_NOTIFYPOSTERASE
         case CDDS_PREPAINT:
             cref:= get_color_ref(this.foreColor)
             rct: RECT = nmcd.rc

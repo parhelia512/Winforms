@@ -172,7 +172,7 @@ folder_browser_dialog :: proc(titleStr: string = "Save As",
     context = global_context    
     buffer : [dynamic]WCHAR
     def_size : int = this.multiSel? MAX_ARR_SIZE : MAX_PATH
-    arena_size : int = calc_arena_size(this, def_size + 20) // Extra 20 chars for safety
+    arena_size : int = calc_arena_size(this, def_size + 24) // Extra 24 chars for safety
 
     // Create arena memory that will be freed when going out of scope.
     arena := newArenaMemory(arena_size, true)      
