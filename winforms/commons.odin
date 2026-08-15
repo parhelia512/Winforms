@@ -291,9 +291,9 @@ get_y_lpm :: #force_inline proc "contextless"(y: LPARAM) -> i32 {
 }
 
 
-@private select_gdi_object :: #force_inline proc(hd : HDC, obj : $T)
+@private select_gdi_object :: #force_inline proc(hd : HDC, obj : $T) -> HGDIOBJ
 {
-	SelectObject(hd, cast(HGDIOBJ)obj)
+	return SelectObject(hd, cast(HGDIOBJ)obj)
 }
 
 @private delete_gdi_object :: #force_inline proc(obj : $T)

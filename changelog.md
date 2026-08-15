@@ -1,6 +1,11 @@
 
 Winforms changelog
 
+v1.1.210 (15-Aug-2026)
+    Groupbox drawing improved
+    Bug fix: control_set_text function caused a crash - issue #5
+
+
 v1.1.208 (27-Jun-2026)
     Fixed bug when handling the WM_NCCREATE message in Form.
     Improved custom draw code for Button, CheckBox and RadioButton.
@@ -8,8 +13,7 @@ v1.1.208 (27-Jun-2026)
 v1.1.207 (15-May-2026)
     Eliminated the need to call create_handle for Form.
     Added onHandleCreated event for Form.
-    Fine tuned NumberPicker border drawing.
-
+    Fine tuned NumberPicker border drawing
 
 
 v1.1.206 (08-May-2026)

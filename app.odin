@@ -19,6 +19,7 @@ import  ui "winforms"
     cmb : ^ui.ComboBox
     np1 : ^ui.NumberPicker
     lb2 : ^ui.Label
+    tb : ^ui.TextBox
     
 //
 cntme : int = 1
@@ -91,9 +92,14 @@ MakeWindow :: proc()
 
     dtp := new_datetimepicker(frm, cright(cmb) + 20, 10)
     
-    gb := new_groupbox(frm, "Format Options", 10, 80, w=230, h=110) //, style=.Classic)
+    gb := new_groupbox(frm, "Format Options1", 10, 80, w=230, h=110) //, style=.Classic)
+    // gbx_set_linecolor(gb, 0xff0000)
+    gb.style = GroupBoxStyle.Overriden
+    gb.lineColor = 0x0000ff
+
     lb1 := new_label(gb, "Line_Space", 10, 40)
-    cb := new_checkbox(gb, "Show Timings", 10, 77)
+    // cb := new_checkbox(gb, "Show Timings", 10, 77)
+    rb := new_radiobutton(gb, "Show Timings", 10, 77)
 
     // set_property(lb1, CommonProps.Back_Color, 0xddAA45)
     // np1 = new_numberpicker(frm, cright(lb1) + 15, gby(gb, 35), deciPrec = 2, step = 1.5)
@@ -115,7 +121,7 @@ MakeWindow :: proc()
     
 
     gb2 := new_groupbox(frm, "Compiler Options", 10, cbottom(gb) + 20, w = 210, h = 200)
-    gb2.foreColor = 0x8338ec
+    // gb2.foreColor = 0x8338ec
     cb2 := new_checkbox(gb2, "No Entry Point", 15, 33)
 
     rb1 := new_radiobutton(gb2, "SubSystem:Windows", 15, 65)
@@ -143,7 +149,7 @@ MakeWindow :: proc()
     // lv.contextMenu.menus[0].menuState = MenuState.Checked
     // lv.contextMenu._ownDraw = true
 
-    tb := new_textbox(frm, 250, 280)
+    tb = new_textbox(frm, 250, 280)
 
     pbx := new_picturebox(frm, cright(gb2) + 10, 328, 270, 180, "gbil.jpg", .Stretch)
 
@@ -222,9 +228,6 @@ MakeWindow :: proc()
     ui.ctrl_set_mouse_leave_handler(np1, mlp)
     ui.ctrl_set_mouse_hover_handler(np1, mhp)
 
-
-    
-    ptf("frm bkg: %X, lb bkg: %X", frm.backColor, lb1.backColor)
     start_mainloop(frm)
 
 

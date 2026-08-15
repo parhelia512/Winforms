@@ -111,7 +111,7 @@ textbox_clear_all:: proc(tb: ^TextBox)
 @private new_tb3:: proc(parent: ^Control, x, y, w, h: i32) -> ^TextBox
 {
     this := tb_ctor(parent, x, y, w, h)
-    ptf("tb wid: %d", w)
+    // ptf("tb wid: %d", w)
     // if this._ownerForm.createChilds do create_control(this)
     return this
 }

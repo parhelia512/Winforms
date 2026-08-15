@@ -213,7 +213,7 @@ progressbar_set_value :: proc(pb : ^ProgressBar, ival : int)
 
 @private pb_draw_percentage :: proc(this: ^ProgressBar, hw: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
 {
-
+    //TODO: Improve this code with _snwprintf
     if this.showPercentage && this.style != .Marquee {
         ret := DefSubclassProc(hw, msg, wp, lp)
         ss:SIZE

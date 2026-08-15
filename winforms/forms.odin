@@ -127,7 +127,7 @@ new_form :: proc{new_form1, new_form2}
         if this.font.handle == nil {
             font_create_handle(&this.font, true) // True means use primary font LOGFONT in 
         }
-        ptf("form size: %d", size_of(Form))
+        // ptf("form size: %d", size_of(Form))
     } else {
         fmt.println("Error in CreateWindowEx,", GetLastError()) 
     }

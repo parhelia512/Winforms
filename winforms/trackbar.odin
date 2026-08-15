@@ -247,6 +247,7 @@ TicData:: struct
     }
 }
 
+
 @private draw_vertical_tics:: proc(hdc: HDC, px: i32, py: i32, ticlen: i32)
 {
     MoveToEx(hdc, px, py, nil);

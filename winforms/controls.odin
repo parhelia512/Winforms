@@ -203,12 +203,13 @@ control_base_init :: proc(this: ^Control, parent: ^Control, x, y, w, h: i32, ctl
 	this.controlID = globalCtlID
 
 	ctlCounter^ += 1
-	globalCtlID += 1
+	globalCtlID += 1	
 	
-	if ctxt != "" && info.isTextable {
-		this.text = ctxt
-		this._wtext = new_widestring(ctxt)
+	if info.isTextable {
+		if ctxt != "" do this.text = ctxt
+		this._wtext = new_widestring(ctxt)	
 	}
+
 	if parent != nil {
 		styleSrc : ^Control = parent.kind == ControlKind.Group_Box? parent.parent : parent
 		if info.hasFont do font_clone(&styleSrc.font, &this.font, true) 
@@ -382,6 +383,7 @@ control_set_text :: proc(ctl : ^Control, txt : string)
 	if cinfo.isTextable == false do return	
 	ctl.text = txt
 	widestring_update(&ctl._wtext, txt)
+
 	if ctl._isCreated {
 		x := SetWindowText(ctl.handle, to_wstring(txt))
 		// ptf("SetWindowText result: %d", x)

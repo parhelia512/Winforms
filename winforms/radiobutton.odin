@@ -196,6 +196,7 @@ radiobutton_set_autocheck:: proc(rb: ^RadioButton, auto_check: bool )
         }
 
     case CM_STATIC_COLOR:
+        // print("199")
         hdc:= dir_cast(wp, HDC)
         api.SetBkMode(hdc, api.BKMODE.TRANSPARENT)
         SetBkColor(hdc, get_color_ref(this.backColor))

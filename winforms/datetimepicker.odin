@@ -105,7 +105,8 @@ dtp_set_custom_format:: proc(dtp: ^DateTimePicker, fmt_string: string)
     this._createHandleProc = dtp_create_handle
     this.format = .Custom
     this._fp_size_fix = set_dtp_size
-    this.formatString = " dd-MMM-yyyy"   
+    this.formatString = " dd-MMM-yyyy"  
+    // ptf("nmhdr: %d", size_of(NMHDR)) // TODO:{IMPORTANT!} Change code member of NMHDR to u32.....
     return this
 }
 

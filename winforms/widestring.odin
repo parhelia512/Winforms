@@ -15,17 +15,20 @@ new_widestring :: proc(text : string) -> ^WideString
 	// print(text)
 	this := new(WideString)
     // ptf("ws ptr %d, text - %s", int(uintptr(this)), text)
-    this.txt = text
 	this.strLen = i32(len(text))
-	barr := transmute([]byte)text	
-    cstr := raw_data(barr)
-	wn := MultiByteToWideChar(CP_UTF8, 0, cstr, this.strLen, nil, 0)
-    if wn == 0 do return nil
-	this.ptr = make([^]WCHAR, (wn + 1), context.allocator)	
-    wn2 := MultiByteToWideChar(CP_UTF8, 0, cstr, this.strLen, this.ptr, wn)    
-    this.ptr[wn] = 0
-    for wn >= 1 && this.ptr[wn - 1] == 0 { wn -= 1 }	
-	this.buffLen = wn	
+	if this.strLen > 0 {
+		this.txt = text	
+		barr := transmute([]byte)text	
+		cstr := raw_data(barr)
+		wn := MultiByteToWideChar(CP_UTF8, 0, cstr, this.strLen, nil, 0)
+		if wn == 0 do return nil
+		this.ptr = make([^]WCHAR, (wn + 1), context.allocator)	
+		wn2 := MultiByteToWideChar(CP_UTF8, 0, cstr, this.strLen, this.ptr, wn)    
+		this.ptr[wn] = 0
+		for wn >= 1 && this.ptr[wn - 1] == 0 { wn -= 1 }	
+		this.buffLen = wn
+	}
+    	
     // ptf("new wstr %s, wn %d, wn2 %d", text, wn, wn2)
 	return this
 } //No Entry Point,  Format Options
@@ -60,22 +63,22 @@ widestring_clone :: proc(src: ^WideString, dest: ^^WideString, id: int = 0)
 
 widestring_update :: proc(this: ^^WideString, txt: string)
 {
-    // print(" did")
-	newlen := i32(len(txt))
-	barr := transmute([]byte)txt	
-    cstr := raw_data(barr)
-	wn := MultiByteToWideChar(CP_UTF8, 0, cstr, newlen, nil, 0)
-	if wn == 0 do return
-	if wn >= this^.buffLen {
+	strLen := i32(len(txt))
+	byte_arr := transmute([]byte)txt	
+    raw_str_data := raw_data(byte_arr)	
+	wcLen := MultiByteToWideChar(CP_UTF8, 0, raw_str_data, strLen, nil, 0)	
+	if wcLen == 0 do return
+	
+	if wcLen >= this^.buffLen {
 		free(this^.ptr)
 		this^.ptr = nil
-		this^.ptr = make([^]WCHAR, (wn + 1), context.allocator)    
+		this^.ptr = make([^]WCHAR, (wcLen + 1), context.allocator)    
 	} 
-	wn2 := MultiByteToWideChar(CP_UTF8, 0, cstr, newlen, this^.ptr, wn)
-	this^.ptr[wn] = 0
-    for wn >= 1 && this^.ptr[wn - 1] == 0 { wn -= 1 }	
-	this^.buffLen = wn	
-    this^.strLen = newlen
+	wn2 := MultiByteToWideChar(CP_UTF8, 0, raw_str_data, strLen, this^.ptr, wcLen)
+	this^.ptr[wcLen] = 0
+    for wcLen >= 1 && this^.ptr[wcLen - 1] == 0 { wcLen -= 1 }	
+	this^.buffLen = wcLen	
+    this^.strLen = strLen
 }
 
 widestring_fill_buffer :: proc(buffer: []WCHAR, txt: string) {
