@@ -166,6 +166,15 @@ create_control :: proc(this : ^Control, width: i32 = 0, height: i32 = 0 )
 	ctlInfo := ControlStaticData[this.kind]
 	ctrl_txt_ptr : WCPTR = nil
 	if ctlInfo.isTextable && len(this.text) > 0 do ctrl_txt_ptr = this._wtext.ptr 
+
+	if this.kind == .Tree_View {
+		if this._style & TVS_EDITLABELS != 0 {
+			fmt.println("TVS_EDITLABELS is present")
+		} else {
+			fmt.println("TVS_EDITLABELS is NOT present")
+		}
+	}
+
     this.handle = CreateWindowEx(  this._exStyle,
 								ctlInfo.clsName,
 								ctrl_txt_ptr,
@@ -187,6 +196,18 @@ create_control :: proc(this : ^Control, width: i32 = 0, height: i32 = 0 )
 	}else {
 		ptf("Failed to create control, error code: %d\n", GetLastError())
     }
+
+	if this.kind == .Tree_View {
+		style := cast(DWORD) api.GetWindowLongPtrW(this.handle, GWL_STYLE)
+
+		fmt.printfln("Actual TreeView style: 0x%X", style)
+
+		if style & TVS_EDITLABELS != 0 {
+			fmt.println("TVS_EDITLABELS is PRESENT in HWND style")
+		} else {
+			fmt.println("TVS_EDITLABELS is NOT present in HWND style")
+		}
+	}
 }
 
 control_base_init :: proc(this: ^Control, parent: ^Control, x, y, w, h: i32, ctlCounter: ^int, ctxt: string = "")

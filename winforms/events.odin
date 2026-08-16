@@ -30,7 +30,7 @@ MK_XBUTTON1 : u32 : 0x0020
 MK_XBUTTON2 : u32 : 0x0040
 
 
-EventArgs :: struct {handled : b64, cancelled : b64,}
+EventArgs :: struct {handled : b64, cancel : b64,}
 MouseEventArgs :: struct
 {
 	using base : EventArgs,
@@ -77,8 +77,11 @@ TreeEventArgs :: struct
 {
     using base : EventArgs,
     action : TreeViewAction,
+    isCBChanged: bool,
+    oldChecked, newChecked: bool,
     node : ^TreeNode,
     oldNode : ^TreeNode,
+    nodeText: string,
 }
 
 LVItemEventArgs :: struct
@@ -107,7 +110,7 @@ new_event_args :: proc "contextless" () -> EventArgs
 {
 	ea : EventArgs
 	ea.handled = false
-    ea.cancelled = false
+    ea.cancel = false
 	return ea
 }
 
@@ -177,7 +180,7 @@ new_size_event_args :: proc(m : u32, wpm : WPARAM, lpm : LPARAM) -> SizeEventArg
     return sea
 }
 
-new_tree_event_args :: proc{tree_event_args1, tree_event_args2}
+new_tree_event_args :: proc{tree_event_args1, tree_event_args2, tree_event_args3}
 
 tree_event_args1 :: proc(ntv : ^NMTREEVIEW) -> TreeEventArgs
 {
@@ -202,16 +205,25 @@ tree_event_args1 :: proc(ntv : ^NMTREEVIEW) -> TreeEventArgs
     return tea
 }
 
-tree_event_args2 :: proc(pic : ^TVITEMCHANGE) -> TreeEventArgs
-{
-    @static x : int
+tree_event_args2 :: proc(tic : ^NMTVITEMCHANGE) -> TreeEventArgs
+{    
     tea : TreeEventArgs
-    ptf("Printing count ---------[%d]\n", x)
-    print("uChanged - ", pic.uChanged)
-    print("UStateNew - ", pic.uStateNew)
-    print("UStateOld - ", pic.uStateOld)
-    print("----------------------------------------")
-    x += 1
+    oldCheck := (tic.uStateOld & TVIS_STATEIMAGEMASK) >> 12
+    newCheck := (tic.uStateNew & TVIS_STATEIMAGEMASK) >> 12
+    tea.isCBChanged = oldCheck != newCheck
+    tea.node = dir_cast(tic.lParam, ^TreeNode)    
+    tea.oldChecked = oldCheck == 2
+    tea.newChecked = newCheck == 2
+    return tea
+}
+
+/*NOTE: tea.nodeText will be freed when the event handler returns.
+       copy the string if user needs it later.*/
+tree_event_args3 :: proc(tic : ^NMTVDISPINFOW, alloc:= context.allocator) -> TreeEventArgs
+{    
+    tea : TreeEventArgs
+    tea.node = cast(^TreeNode)cast(uintptr) tic.item.lParam
+    tea.nodeText = utf16_to_utf8(tic.item.pszText[:tic.item.cchTextMax], alloc)
     return tea
 }
 

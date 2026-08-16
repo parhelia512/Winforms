@@ -378,7 +378,7 @@ NMSELCHANGE :: struct
         iNewStateImageIndex : i32,
     }
 
-    TVITEMCHANGE :: struct
+    NMTVITEMCHANGE :: struct
     {
         hdr : NMHDR,
         uChanged : u32,
@@ -386,6 +386,11 @@ NMSELCHANGE :: struct
         uStateNew : u32,
         uStateOld : u32,
         lParam : LPARAM,
+    }
+
+	NMTVDISPINFOW :: struct {
+        hdr : NMHDR,
+        item: TVITEM,
     }
 
     NMTVCUSTOMDRAW :: struct

@@ -414,6 +414,7 @@ show_memory_report :: proc(track: ^mem.Tracking_Allocator)
 {
     for _, v in track.allocation_map { ptf("%v leaked %v bytes\n", v.location, v.size) }
     for bf in track.bad_free_array { ptf("%v allocation %p was freed badly\n", bf.location, bf.memory) }
+	print("Report completed")
 }
 
 

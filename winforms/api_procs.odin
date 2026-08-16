@@ -105,6 +105,7 @@ utf16_to_utf8 :: proc(s: []u16, allocator := context.temp_allocator) -> string {
    return res
 }
 
+
 // Takes a multi pointer.
 wstring_to_string :: proc(s: wstring, allocator := context.temp_allocator) -> string {
    res, _ := wstring_to_utf8(s, -1, allocator)

@@ -92,10 +92,13 @@ TreeView:: struct
     _uniqItemID: int,
     _nodeChecked: bool,
     _nodeClrChange: bool,
+    _suppressNotify: bool,
 
-    onBeginEdit,
-    onEndEdit: EventHandler,
+    
     onNodeDeleted: EventHandler,
+    onBeginEdit,
+    onEndEdit,  
+    onEditCancelled,
     onBeforeChecked,
     onAfterChecked,
     onBeforeSelect,
@@ -233,6 +236,12 @@ treeview_create_image_list:: proc(tv: ^TreeView, nImg: int, ico_size: int = 16)
     tv.imageList = ImageList_Create(isize, isize, TVIML_FLAG, i32(nImg), 0 )
     SendMessage(tv.handle, TVM_SETIMAGELIST, 0, dir_cast(tv.imageList, LPARAM))
 }
+
+// Prepare for editing the node text. TreeView's editable property must be true. 
+treenode_begin_edit :: proc(this: ^TreeNode) 
+{
+    SendMessage(this._treeHwnd, TVM_EDITLABELW, 0, cast(LPARAM) cast(uintptr) this.handle)
+}
 // ======================================Private Functions=======================================
 
 @private tv_ctor:: proc(f: ^Control, x, y, w, h: i32) -> ^TreeView
@@ -274,6 +283,7 @@ treeview_create_image_list:: proc(tv: ^TreeView, nImg: int, ico_size: int = 16)
 @private tv_create_handle :: proc(ctl: ^Control)
 {
 	this := cast(^TreeView)ctl
+    ptf("editable %t", this.editable)
 	tv_adjust_styles(this)	
 	create_control(ctl, this.width, this.height)
 	set_subclass(this, tv_wnd_proc)
@@ -628,13 +638,15 @@ treeview_create_image_list:: proc(tv: ^TreeView, nImg: int, ico_size: int = 16)
     for i in stls { if (tv._style & i) != i do tv._style |= i }
 }
 
+
+
 @private tv_adjust_styles:: proc(tv: ^TreeView)
 {
     if tv.noLines do tv._style ~= TVS_HASLINES
     if tv.noButtons do tv._style ~= TVS_HASBUTTONS
     if tv.hasCheckBoxes do add_style(tv, TVS_CHECKBOXES)
     if tv.fullRowSelect do add_style(tv, TVS_FULLROWSELECT)
-    if tv.editable do add_style(tv, TVS_EDITLABELS )
+    if tv.editable do tv._style |= TVS_EDITLABELS //add_style(tv, TVS_EDITLABELS )
     if tv.showSelection do add_style(tv, TVS_SHOWSELALWAYS)
     if tv.hotTracking do add_style(tv, TVS_TRACKSELECT )
 
@@ -706,11 +718,10 @@ treeview_create_image_list:: proc(tv: ^TreeView, nImg: int, ico_size: int = 16)
         switch nm.code {
         case TVN_DELETEITEMW:
             if this.onNodeDeleted != nil {
-                // nmtv:= dir_cast(lp, ^NMTREEVIEW)
-                // tn:= dir_cast(nmtv.itemOld.lParam, ^TreeNode)
-                // ptf("%s's array deleted now\n", tn.text)
-                ea:= new_event_args()
-                this.onNodeDeleted(this, &ea)
+                nmtv:= dir_cast(lp, ^NMTREEVIEW)
+                tea : TreeEventArgs
+                tea.node = dir_cast(nmtv.itemOld.lParam, ^TreeNode)
+                this.onNodeDeleted(this, &tea)
             }
         case TVN_SELCHANGINGW:
             if this.onBeforeSelect != nil {
@@ -724,70 +735,89 @@ treeview_create_image_list:: proc(tv: ^TreeView, nImg: int, ico_size: int = 16)
             this.selectedNode = tea.node
             if this.onAfterSelect != nil { this.onAfterSelect(this, &tea) }
 
-        case NM_TVSTATEIMAGECHANGING:
-            //print("check NM_TVSTATEIMAGECHANGING")
-            tvsic:= dir_cast(lp, ^NMTVSTATEIMAGECHANGING)
-            //tea:= new_tree_event_args(tvsic)
-
-            if tvsic.iOldStateImageIndex == 1 {
-                this._nodeChecked = true }
-            else if tvsic.iOldStateImageIndex == 2 {
-                this._nodeChecked = false
-            }
-
-            // print("chk new - ", tvsic.iNewStateImageIndex)
-            //print("chk action - ", tvsic.iNewStateImageIndex)
-
         case TVN_ITEMCHANGINGW:
             if this.onBeforeChecked != nil {
-                tvic:= dir_cast(lp, ^TVITEMCHANGE)
-                tea:= new_tree_event_args(tvic)
-                if this._nodeChecked do tea.node.checked = true
-                this.onBeforeChecked(this, &tea)
+                tea:= new_tree_event_args(dir_cast(lp, ^NMTVITEMCHANGE))
+                if tea.isCBChanged {
+                    this.onBeforeChecked(this, &tea)
+                    if tea.cancel do return 1
+                }
             }
 
         case TVN_ITEMCHANGEDW:
+            if this._suppressNotify do return 0
             if this.onAfterChecked != nil {
-                tvic:= dir_cast(lp, ^TVITEMCHANGE)
-                tea:= new_tree_event_args(tvic)
-                if this._nodeChecked do tea.node.checked = true
-                this.onAfterChecked(this, &tea)
+                tea := new_tree_event_args(dir_cast(lp, ^NMTVITEMCHANGE))
+                if tea.oldChecked != tea.newChecked do this.onAfterChecked(this, &tea)
             }
 
         case TVN_ITEMEXPANDINGW:
             nmtv:= dir_cast(lp, ^NMTREEVIEW)
             switch nmtv.action {
-            case 1:
-                if this.onBeforeCollapse != nil {
-                    tea:= new_tree_event_args(nmtv)
-                    this.onBeforeCollapse(this, &tea)
+                case 1:
+                    if this.onBeforeCollapse != nil {
+                        tea:= new_tree_event_args(nmtv)
+                        this.onBeforeCollapse(this, &tea)
+                        if tea.cancel do return 1
+                    }
+
+                case 2:
+                    if this.onBeforeExpand != nil {
+                        tea:= new_tree_event_args(nmtv)
+                        this.onBeforeExpand(this, &tea)
+                        if tea.cancel do return 1
+                    }
                 }
-            case 2:
-                if this.onBeforeExpand != nil {
-                    tea:= new_tree_event_args(nmtv)
-                    this.onBeforeExpand(this, &tea)
-                }
-            }
 
         case TVN_ITEMEXPANDEDW:
+            if this._suppressNotify do return 0
             nmtv:= dir_cast(lp, ^NMTREEVIEW)
             switch nmtv.action {
-            case 1:
-                if this.onAfterCollapse != nil {
-                    tea:= new_tree_event_args(nmtv)
-                    this.onAfterCollapse(this, &tea)
-                }
-            case 2:
-                if this.onAfterExpand != nil {
-                    tea:= new_tree_event_args(nmtv)
-                    this.onAfterExpand(this, &tea)
-                }
+                case 1:
+                    if this.onAfterCollapse != nil {
+                        tea:= new_tree_event_args(nmtv)
+                        this.onAfterCollapse(this, &tea)
+                    }
+
+                case 2:
+                    if this.onAfterExpand != nil {
+                        tea:= new_tree_event_args(nmtv)
+                        this.onAfterExpand(this, &tea)
+                    }
             }
 
-        case NM_CUSTOMDRAW:
-            if this._nodeClrChange {
-                return treenode_color( lp)
+        case TVN_BEGINLABELEDITW:
+            if this.onBeginEdit != nil {
+                nmdi := dir_cast(lp, ^NMTVDISPINFOW)
+                tea := new_tree_event_args(nmdi)
+                this.onBeginEdit(this, &tea)
+                delete(tea.nodeText)
+                if tea.cancel do return 1
             }
+
+        case TVN_ENDLABELEDITW:
+            if this.onEndEdit != nil {
+                nmdi := dir_cast(lp, ^NMTVDISPINFOW)
+                if nmdi.item.pszText == nil {
+                    if this.onEditCancelled != nil {
+                        tea: TreeEventArgs
+                        // tea.hItem = nmdi.item.hItem
+                        this.onEditCancelled(this, &tea)
+                    }
+                    return 0  // nothing was typed; native control reverts on its own regardless
+                }
+
+                tea := new_tree_event_args(nmdi)
+                this.onEndEdit(this, &tea)
+                delete(tea.nodeText)
+                if tea.cancel do return 0  // Zero here means REJECT and revert
+            }
+            return 1 // Must return TRUE (nonzero) to accept and commit the new text
+
+        // case NM_CUSTOMDRAW:
+        //     if this._nodeClrChange {
+        //         return treenode_color( lp)
+        //     }
 
         // case:
             //print("else case - ", nm.code)

@@ -639,7 +639,7 @@ window_proc :: proc "stdcall" (hw : HWND, msg : u32, wp : WPARAM, lp : LPARAM ) 
             if frm.onClosing != nil {
                 ea := new_event_args()
                 frm.onClosing(frm, &ea)
-                if ea.cancelled do return 0
+                if ea.cancel do return 0
             }
             // return 0
 

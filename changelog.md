@@ -1,6 +1,10 @@
 
 Winforms changelog
 
+v1.1.211 (16-Aug-2026)
+    Added BeginEdit function for TreeNode.
+    Improved some TreeView events.
+
 v1.1.210 (15-Aug-2026)
     Groupbox drawing improved
     Bug fix: control_set_text function caused a crash - issue #5

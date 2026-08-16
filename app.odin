@@ -20,6 +20,7 @@ import  ui "winforms"
     np1 : ^ui.NumberPicker
     lb2 : ^ui.Label
     tb : ^ui.TextBox
+    tv : ^ui.TreeView
     
 //
 cntme : int = 1
@@ -159,12 +160,14 @@ MakeWindow :: proc()
     tk.customDraw = true
     tk.onValueChanged = track_change_proc    
 
-    tv := new_treeview(frm, cright(lv) + 20, dtp.ypos, 250, 220)
+    tv = new_treeview(frm, cright(lv) + 20, dtp.ypos, 250, 220)
     treeview_add_nodes(tv, "Windows", "MacOS", "Linux", "ReactOS")
     treeview_add_childnodes(tv, 0, "XP", "Vista", "Win7", "Win8", "Win10", "Win11")
     treeview_add_childnodes(tv, 1, "Mountain Lion", "Mavericks", "Catalina", "Big Sur", "Monterey")
     treeview_add_childnodes(tv, 2, "RedHat", "Mint", "Ubuntu", "Debian", "Kali")
     treeview_add_node_with_children(tv, "BSD", "VersionA", "VersionB", "VersionC")
+    tv.onBeforeCollapse = tv_event_test
+    tv.editable = true
 
     cal := new_calendar(frm, tv.xpos, cbottom(tv) + 20)
 
@@ -172,6 +175,7 @@ MakeWindow :: proc()
 
     track_change_proc :: proc(c : rawptr, e : ^ui.EventArgs) {
         ui.progressbar_set_value(pgb, tk.value)
+        
     }
 
     newclient_menuclick :: proc(sender: rawptr, e: ^ui.EventArgs) {
@@ -201,6 +205,11 @@ MakeWindow :: proc()
         // ui.print_rcpt(np1._myrc, {0, 0}, "In app odin")
         
     }
+
+    tv_event_test :: proc(c:^ui.TreeView, e: ^ui.TreeEventArgs) {
+        ptf("tree event happened %s", e.nodeText)
+    }
+
     
 
     
